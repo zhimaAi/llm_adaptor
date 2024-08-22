@@ -18,7 +18,7 @@ import (
 	"github.com/zhimaAi/llm_adaptor/api/gemini"
 	"github.com/zhimaAi/llm_adaptor/api/hunyuan"
 	"github.com/zhimaAi/llm_adaptor/api/lingyiwanwu"
-	"github.com/zhimaAi/llm_adaptor/api/minimaxi"
+	"github.com/zhimaAi/llm_adaptor/api/minimax"
 	"github.com/zhimaAi/llm_adaptor/api/moonshot"
 	"github.com/zhimaAi/llm_adaptor/api/ollama"
 	"github.com/zhimaAi/llm_adaptor/api/openai"
@@ -82,7 +82,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 		result = &ZhimaChatCompletionStreamResponse{
 			&OpenAIStreamResult{stream},
 		}
-	case "ali", "baichuan", "moonshot", "lingyiwanwu", "deepseek", "zhipu", "minimaxi", "openaiAgent":
+	case "ali", "baichuan", "moonshot", "lingyiwanwu", "deepseek", "zhipu", "minimax", "openaiAgent":
 		var client *openai.Client
 		if a.meta.Corp == "ali" {
 			client = ali.NewClient(a.meta.APIKey).OpenAIClient
@@ -96,8 +96,8 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			client = deepseek.NewClient(a.meta.APIKey).OpenAIClient
 		} else if a.meta.Corp == "zhipu" {
 			client = zhipu.NewClient(a.meta.APIKey).OpenAIClient
-		} else if a.meta.Corp == "minimaxi" {
-			client = minimaxi.NewClient(a.meta.APIKey).OpenAIClient
+		} else if a.meta.Corp == "minimax" {
+			client = minimax.NewClient(a.meta.APIKey).OpenAIClient
 		} else if a.meta.Corp == "openaiAgent" {
 			client = openaiagent.NewClient(a.meta.EndPoint, a.meta.APIKey, a.meta.APIVersion).OpenAIClient
 		}

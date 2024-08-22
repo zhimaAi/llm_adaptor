@@ -1,4 +1,4 @@
-package minimaxi
+package minimax
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestCompletion(t *testing.T) {
-	key := os.Getenv("MINIMAXI_KEY")
+	key := os.Getenv("MINIMAX_KEY")
 	client := NewClient(key)
 	req := openai.ChatCompletionRequest{
 		Model:    `abab6.5s-chat`,
@@ -24,10 +24,10 @@ func TestCompletion(t *testing.T) {
 }
 
 func TestCompletionStream(t *testing.T) {
-	key := os.Getenv("MINIMAXI_KEY")
+	key := os.Getenv("MINIMAX_KEY")
 	client := NewClient(key)
 	req := openai.ChatCompletionRequest{
-		Model:    `abab6.5s-chat`,
+		Model:    `abab5.5-chat`,
 		Messages: []openai.ChatCompletionRequestMessage{{Role: "user", Content: "你好,给我讲一个300字的小故事吧"}},
 	}
 	stream, err := client.OpenAIClient.CreateChatCompletionStream(req)

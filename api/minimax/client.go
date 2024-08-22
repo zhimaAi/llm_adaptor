@@ -1,6 +1,6 @@
 // Copyright © 2016- 2024 Sesame Network Technology all right reserved
 
-package minimaxi
+package minimax
 
 import "github.com/zhimaAi/llm_adaptor/api/openai"
 

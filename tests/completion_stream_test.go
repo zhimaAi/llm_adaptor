@@ -46,8 +46,8 @@ func TestOpenAIChatCompletionStream(t *testing.T) {
 
 func TestMinimaxiChatCompletionStream(t *testing.T) {
 	testChatCompletionStream(adaptor.Meta{
-		Corp:   "minimaxi",
+		Corp:   "minimax",
 		Model:  `abab6.5s-chat`,
-		APIKey: os.Getenv(`MINIMAXI_KEY`),
+		APIKey: os.Getenv(`MINIMAX_KEY`),
 	})
 }
