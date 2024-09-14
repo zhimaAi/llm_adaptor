@@ -363,11 +363,23 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 		client := hunyuan.NewClient(a.meta.APIKey, a.meta.SecretKey, a.meta.Region)
 		r := tencentHunyuan.NewChatCompletionsRequest()
 		r.Model = common.StringPtr(a.meta.Model)
+		var systemContent string
 		for _, v := range req.Messages {
-			r.Messages = append(r.Messages, &tencentHunyuan.Message{
-				Role:    common.StringPtr(v.Role),
-				Content: common.StringPtr(v.Content),
-			})
+			if v.Role == "system" {
+				systemContent = systemContent + `\n` + v.Content
+			}
+		}
+		r.Messages = append(r.Messages, &tencentHunyuan.Message{
+			Role:    common.StringPtr("system"),
+			Content: common.StringPtr(systemContent),
+		})
+		for _, v := range req.Messages {
+			if v.Role == "user" || v.Role == "assistant" {
+				r.Messages = append(r.Messages, &tencentHunyuan.Message{
+					Role:    common.StringPtr(v.Role),
+					Content: common.StringPtr(v.Content),
+				})
+			}
 		}
 		r.Temperature = common.Float64Ptr(req.Temperature)
 		stream, err := client.CreateChatCompletionStream(*r)
