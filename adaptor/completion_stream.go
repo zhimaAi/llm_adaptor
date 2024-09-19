@@ -369,10 +369,12 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 				systemContent = systemContent + `\n` + v.Content
 			}
 		}
-		r.Messages = append(r.Messages, &tencentHunyuan.Message{
-			Role:    common.StringPtr("system"),
-			Content: common.StringPtr(systemContent),
-		})
+		if len(systemContent) > 0 {
+			r.Messages = append(r.Messages, &tencentHunyuan.Message{
+				Role:    common.StringPtr("system"),
+				Content: common.StringPtr(systemContent),
+			})
+		}
 		for _, v := range req.Messages {
 			if v.Role == "user" || v.Role == "assistant" {
 				r.Messages = append(r.Messages, &tencentHunyuan.Message{
