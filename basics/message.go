@@ -8,7 +8,7 @@ type MessageOther struct {
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
 	ToolName         string         `json:"tool_name,omitempty"`
 	ResponseMeta     *ResponseMeta  `json:"response_meta,omitempty"`
-	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	ReasoningContent string         `json:"reasoning_content"`
 	Extra            map[string]any `json:"extra,omitempty"`
 }
 
