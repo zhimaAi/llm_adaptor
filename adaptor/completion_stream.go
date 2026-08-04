@@ -157,6 +157,9 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 		if tool.InArrayString(a.meta.Corp, []string{`ali`, `siliconflow`}) && a.meta.ChoosableThinking {
 			req.EnableThinking = &a.meta.EnabledThinking
 		}
+		if a.meta.Corp == `deepseek` {
+			req.Thinking = &openai.Thinking{Type: openai.ThinkingTypeDisabled}
+		}
 		if client == nil {
 			return &ZhimaChatCompletionStreamResponse{}, errors.New(`corp not supported`)
 		}
