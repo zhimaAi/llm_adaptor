@@ -331,19 +331,11 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			client.EndPoint, _ = GenerateClientEndPoint(a)
 		}
 
-		messages := make([]cohere.ChatMessage, 0, len(req.Messages))
-		for _, message := range req.Messages {
-			messages = append(messages, cohere.ChatMessage{Role: message.Role, Content: message.Content})
+		cohereReq, _, err := buildCohereChatCompletionRequest(a.meta, req)
+		if err != nil {
+			return nil, err
 		}
-
-		req := cohere.ChatCompletionRequest{
-			Model:       a.meta.Model,
-			Messages:    messages,
-			MaxTokens:   req.MaxToken,
-			Temperature: req.Temperature,
-		}
-		applyThinking(a.meta, &req)
-		stream, err := client.CreateChatCompletionStream(req)
+		stream, err := client.CreateChatCompletionStream(cohereReq)
 		if err != nil {
 			return nil, err
 		}

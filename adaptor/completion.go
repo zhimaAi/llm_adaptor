@@ -504,21 +504,20 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			client.EndPoint, _ = GenerateClientEndPoint(a)
 		}
 
-		messages := make([]cohere.ChatMessage, 0, len(req.Messages))
-		for _, message := range req.Messages {
-			messages = append(messages, cohere.ChatMessage{Role: message.Role, Content: message.Content})
-		}
-
-		req := cohere.ChatCompletionRequest{
-			Model:       a.meta.Model,
-			Messages:    messages,
-			MaxTokens:   req.MaxToken,
-			Temperature: req.Temperature,
-		}
-		applyThinking(a.meta, &req)
-		res, err := client.CreateChatCompletion(req)
+		cohereReq, useV2, err := buildCohereChatCompletionRequest(a.meta, req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
+		}
+		res, err := client.CreateChatCompletion(cohereReq)
+		if err != nil {
+			return ZhimaChatCompletionResponse{}, err
+		}
+		if !useV2 {
+			return ZhimaChatCompletionResponse{
+				Result:          res.Text,
+				PromptToken:     res.Meta.Tokens.InputTokens,
+				CompletionToken: res.Meta.Tokens.OutputTokens,
+			}, nil
 		}
 		result, reasoningContent := cohereTextAndThinking(res.Message.Content)
 		return ZhimaChatCompletionResponse{

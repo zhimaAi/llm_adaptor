@@ -3,6 +3,7 @@
 package adaptor
 
 import (
+	"errors"
 	"strings"
 
 	tencentHunyuan "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/hunyuan/v20230901"
@@ -249,4 +250,37 @@ func cohereTextAndThinking(contents []cohere.ChatContent) (string, string) {
 		}
 	}
 	return textBuilder.String(), thinkingBuilder.String()
+}
+
+func buildCohereChatCompletionRequest(meta Meta, req ZhimaChatCompletionRequest) (cohere.ChatCompletionRequest, bool, error) {
+	request := cohere.ChatCompletionRequest{
+		MaxTokens:   req.MaxToken,
+		Temperature: req.Temperature,
+	}
+	if !meta.ChoosableThinking {
+		n := len(req.Messages)
+		for _, message := range req.Messages[:n-1] {
+			switch message.Role {
+			case "system":
+				request.ChatHistory = append(request.ChatHistory, cohere.ChatHistory{Role: "SYSTEM", Message: message.Content})
+			case "user":
+				request.ChatHistory = append(request.ChatHistory, cohere.ChatHistory{Role: "USER", Message: message.Content})
+			case "assistant":
+				request.ChatHistory = append(request.ChatHistory, cohere.ChatHistory{Role: "CHATBOT", Message: message.Content})
+			}
+		}
+		request.Message = req.Messages[n-1].Content
+		return request, false, nil
+	}
+
+	if strings.TrimSpace(meta.Model) == "" {
+		return cohere.ChatCompletionRequest{}, true, errors.New("model is required for cohere v2 chat")
+	}
+	request.Model = meta.Model
+	request.Messages = make([]cohere.ChatMessage, 0, len(req.Messages))
+	for _, message := range req.Messages {
+		request.Messages = append(request.Messages, cohere.ChatMessage{Role: message.Role, Content: message.Content})
+	}
+	applyThinking(meta, &request)
+	return request, true, nil
 }
