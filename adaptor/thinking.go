@@ -95,6 +95,14 @@ func applyThinking[T thinkingRequest](meta Meta, request T, apiVersion ...string
 	case *claude.ChatCompletionRequest:
 		adaptive := claudeUsesAdaptiveThinking(meta.Model)
 		if !meta.EnabledThinking {
+			// Fable and Mythos models always use adaptive thinking and reject
+			// thinking.type=disabled. Omitting thinking keeps the request valid;
+			// these models already default to hiding the thinking content.
+			if claudeCannotDisableThinking(meta.Model) {
+				req.Thinking = nil
+				req.Temperature = 0
+				return
+			}
 			req.Thinking = &claude.Thinking{Type: "disabled"}
 			if claudeRequiresDefaultSampling(meta.Model) {
 				req.Temperature = 0
@@ -173,6 +181,19 @@ func claudeRequiresDefaultSampling(model string) bool {
 	prefixes := []string{
 		"claude-opus-4-7", "claude-opus-4-8",
 		"claude-opus-5", "claude-sonnet-5",
+		"claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func claudeCannotDisableThinking(model string) bool {
+	model = strings.ToLower(model)
+	prefixes := []string{
 		"claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
 	}
 	for _, prefix := range prefixes {
