@@ -30,6 +30,10 @@ type endpoint struct {
 }
 
 var modelToEndpoint = map[string]endpoint{
+	"Spark X2":       {URL: "wss://spark-api.xf-yun.com/x2", Domain: "spark-x"},
+	"Spark-X2":       {URL: "wss://spark-api.xf-yun.com/x2", Domain: "spark-x"},
+	"spark-x":        {URL: "wss://spark-api.xf-yun.com/x2", Domain: "spark-x"},
+	"Spark X1.5":     {URL: "wss://spark-api.xf-yun.com/v1/x1", Domain: "spark-x"},
 	"Spark4.0 Ultra": {URL: "wss://spark-api.xf-yun.com/v4.0/chat", Domain: "4.0Ultra"},
 	"Spark Max":      {URL: "wss://spark-api.xf-yun.com/v3.5/chat", Domain: "generalv3.5"},
 	"Spark Pro":      {URL: "wss://spark-api.xf-yun.com/v3.1/chat", Domain: "generalv3"},

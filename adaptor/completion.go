@@ -166,6 +166,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
@@ -173,6 +174,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 		toolCalls := res.Choices[0].Message.ToolCalls
 		return ZhimaChatCompletionResponse{
 			Result:            res.Choices[0].Message.Content,
+			ReasoningContent:  res.Choices[0].Message.GetReasoningContent(),
 			ToolCalls:         toolCalls,
 			FunctionToolCalls: toolCalls.FunctionToolCalls(),
 			PromptToken:       res.Usage.PromptTokens,
@@ -245,12 +247,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
-		if tool.InArrayString(a.meta.Corp, []string{`ali`, `siliconflow`}) && a.meta.ChoosableThinking {
-			req.EnableThinking = &a.meta.EnabledThinking
-		}
-		if a.meta.Corp == `deepseek` {
-			req.Thinking = &openai.Thinking{Type: openai.ThinkingTypeDisabled}
-		}
+		applyThinking(a.meta, &req)
 		if client == nil {
 			return ZhimaChatCompletionResponse{}, errors.New(`corp not supported`)
 		}
@@ -261,7 +258,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 		toolCalls := res.Choices[0].Message.ToolCalls
 		return ZhimaChatCompletionResponse{
 			Result:            res.Choices[0].Message.Content,
-			ReasoningContent:  res.Choices[0].Message.ReasoningContent,
+			ReasoningContent:  res.Choices[0].Message.GetReasoningContent(),
 			ToolCalls:         toolCalls,
 			FunctionToolCalls: toolCalls.FunctionToolCalls(),
 			PromptToken:       res.Usage.PromptTokens,
@@ -287,6 +284,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
@@ -294,6 +292,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 		toolCalls := res.Choices[0].Message.ToolCalls
 		return ZhimaChatCompletionResponse{
 			Result:            res.Choices[0].Message.Content,
+			ReasoningContent:  res.Choices[0].Message.ReasoningContent,
 			ToolCalls:         toolCalls,
 			FunctionToolCalls: toolCalls.FunctionToolCalls(),
 			PromptToken:       res.Usage.PromptTokens,
@@ -336,6 +335,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			Functions:       functions,
 			Tools:           tools,
 		}
+		applyThinking(a.meta, &req, client.ApiVersion)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
@@ -406,20 +406,26 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			System:      system,
 			//Tools:       tools,
 		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
 		}
 		var toolCalls basics.ToolCalls
-		if res.Type == `tool_use` {
-			arguments, err := basics.JsonEncodeStr(res.Content[0].Input)
-			if err != nil {
-				return ZhimaChatCompletionResponse{}, err
+		for _, content := range res.Content {
+			if content.Type != `tool_use` {
+				continue
 			}
-			toolCalls = append(toolCalls, basics.NewFunctionToolCall(res.Content[0].Id, res.Content[0].Name, arguments))
+			arguments, encodeErr := basics.JsonEncodeStr(content.Input)
+			if encodeErr != nil {
+				return ZhimaChatCompletionResponse{}, encodeErr
+			}
+			toolCalls = append(toolCalls, basics.NewFunctionToolCall(content.Id, content.Name, arguments))
 		}
+		result, reasoningContent := claudeTextAndThinking(res.Content)
 		return ZhimaChatCompletionResponse{
-			Result:            res.Content[0].Text,
+			Result:            result,
+			ReasoningContent:  reasoningContent,
 			ToolCalls:         toolCalls,
 			FunctionToolCalls: toolCalls.FunctionToolCalls(),
 			PromptToken:       res.Usage.InputTokens,
@@ -442,14 +448,17 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			Contents:         contents,
 			GenerationConfig: gemini.GenerationConfig{Temperature: req.Temperature, MaxOutputTokens: req.MaxToken},
 		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
 		}
+		result, reasoningContent := geminiTextAndThinking(res.Candidates[0].Content.Parts)
 		return ZhimaChatCompletionResponse{
-			Result:          res.Candidates[0].Content.Parts[0].Text,
-			PromptToken:     res.UsageMetadata.PromptTokenCount,
-			CompletionToken: res.UsageMetadata.CandidatesTokenCount,
+			Result:           result,
+			ReasoningContent: reasoningContent,
+			PromptToken:      res.UsageMetadata.PromptTokenCount,
+			CompletionToken:  geminiCompletionTokens(res.UsageMetadata),
 		}, nil
 	case "doubao":
 		baseUrl := "https://ark.cn-beijing.volces.com/api/v3"
@@ -475,13 +484,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
-		if a.meta.ChoosableThinking {
-			thinking := openai.Thinking{Type: openai.ThinkingTypeDisabled}
-			if a.meta.EnabledThinking {
-				thinking.Type = openai.ThinkingTypeEnabled
-			}
-			req.Thinking = &thinking
-		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
@@ -501,32 +504,28 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			client.EndPoint, _ = GenerateClientEndPoint(a)
 		}
 
-		var histories []cohere.ChatHistory
-		n := len(req.Messages)
-		for _, v := range req.Messages[:n-1] {
-			if v.Role == "system" {
-				histories = append(histories, cohere.ChatHistory{Role: "SYSTEM", Message: v.Content})
-			} else if v.Role == "user" {
-				histories = append(histories, cohere.ChatHistory{Role: "USER", Message: v.Content})
-			} else if v.Role == "assistant" {
-				histories = append(histories, cohere.ChatHistory{Role: "CHATBOT", Message: v.Content})
-			}
+		messages := make([]cohere.ChatMessage, 0, len(req.Messages))
+		for _, message := range req.Messages {
+			messages = append(messages, cohere.ChatMessage{Role: message.Role, Content: message.Content})
 		}
 
 		req := cohere.ChatCompletionRequest{
-			Message:     req.Messages[n-1].Content,
-			ChatHistory: histories,
+			Model:       a.meta.Model,
+			Messages:    messages,
 			MaxTokens:   req.MaxToken,
 			Temperature: req.Temperature,
 		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
 		}
+		result, reasoningContent := cohereTextAndThinking(res.Message.Content)
 		return ZhimaChatCompletionResponse{
-			Result:          res.Text,
-			PromptToken:     res.Meta.Tokens.InputTokens,
-			CompletionToken: res.Meta.Tokens.OutputTokens,
+			Result:           result,
+			ReasoningContent: reasoningContent,
+			PromptToken:      res.Usage.Tokens.InputTokens,
+			CompletionToken:  res.Usage.Tokens.OutputTokens,
 		}, nil
 	case "spark":
 		client := spark.NewClient(a.meta.APIKey, a.meta.APPID, a.meta.SecretKey, a.meta.Model)
@@ -553,6 +552,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 				},
 			},
 		}
+		applyThinking(a.meta, &req)
 		if len(textFunctions) > 0 {
 			//req.Payload.Functions = &spark.Function{Text: textFunctions}
 		}
@@ -566,6 +566,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 		}
 		return ZhimaChatCompletionResponse{
 			Result:            res.Payload.Choices.Text[0].Content,
+			ReasoningContent:  res.Payload.Choices.Text[0].ReasoningContent,
 			ToolCalls:         toolCalls,
 			FunctionToolCalls: toolCalls.FunctionToolCalls(),
 			PromptToken:       res.Payload.Usage.Text.PromptTokens,
@@ -596,14 +597,16 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			}
 		}
 		r.Temperature = common.Float64Ptr(req.Temperature)
+		applyThinking(a.meta, r)
 		res, err := client.CreateChatCompletion(*r)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
 		}
 		return ZhimaChatCompletionResponse{
-			Result:          *res.Choices[0].Message.Content,
-			PromptToken:     int(*res.Usage.PromptTokens),
-			CompletionToken: int(*res.Usage.CompletionTokens),
+			Result:           *res.Choices[0].Message.Content,
+			ReasoningContent: stringValue(res.Choices[0].Message.ReasoningContent),
+			PromptToken:      int(*res.Usage.PromptTokens),
+			CompletionToken:  int(*res.Usage.CompletionTokens),
 		}, nil
 	case "ollama":
 		client := ollama.NewClient(a.meta.EndPoint, a.meta.Model)
@@ -627,6 +630,7 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 				"num_ctx":     req.MaxToken,
 			},
 		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		logs.Info("CreateChatCompletionStream:req:%v,res:%v,%v", req, res, err)
 		if err != nil {
@@ -652,14 +656,16 @@ func (a *Adaptor) CreateChatCompletion(req ZhimaChatCompletionRequest) (resp Zhi
 			MaxTokens:   req.MaxToken,
 			Temperature: req.Temperature,
 		}
+		applyThinking(a.meta, &req)
 		res, err := client.CreateChatCompletion(req)
 		if err != nil {
 			return ZhimaChatCompletionResponse{}, err
 		}
 		return ZhimaChatCompletionResponse{
-			Result:          res.Choices[0].Message.Content,
-			PromptToken:     res.Usage.PromptTokens,
-			CompletionToken: res.Usage.CompletionTokens,
+			Result:           res.Choices[0].Message.Content,
+			ReasoningContent: res.Choices[0].Message.ReasoningContent,
+			PromptToken:      res.Usage.PromptTokens,
+			CompletionToken:  res.Usage.CompletionTokens,
 		}, nil
 	}
 

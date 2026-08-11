@@ -37,20 +37,26 @@ type RequestMessage struct {
 	Text any `json:"text"`
 }
 type Chat struct {
-	Domain      string  `json:"domain"`
-	Temperature float64 `json:"temperature"`
-	TopK        int     `json:"top_k"`
-	MaxTokens   int     `json:"max_tokens"`
-	Auditing    string  `json:"auditing"`
-	Stream      bool    `json:"stream"`
+	Domain      string    `json:"domain"`
+	Temperature float64   `json:"temperature"`
+	TopK        int       `json:"top_k"`
+	MaxTokens   int       `json:"max_tokens"`
+	Auditing    string    `json:"auditing"`
+	Stream      bool      `json:"stream"`
+	Thinking    *Thinking `json:"thinking,omitempty"`
+}
+
+type Thinking struct {
+	Type string `json:"type"`
 }
 
 type ChatCompletionResponseMessage struct {
-	Role         string       `json:"role"`
-	Content      string       `json:"content"`
-	ContentType  string       `json:"content_type"`
-	FunctionCall FunctionCall `json:"function_call"`
-	Index        int          `json:"index"`
+	Role             string       `json:"role"`
+	Content          string       `json:"content"`
+	ReasoningContent string       `json:"reasoning_content,omitempty"`
+	ContentType      string       `json:"content_type"`
+	FunctionCall     FunctionCall `json:"function_call"`
+	Index            int          `json:"index"`
 }
 type FunctionCall struct {
 	Name      string `json:"name"`
@@ -86,10 +92,14 @@ type TextUsage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 type ChatCompletionStream struct {
-	conn *websocket.Conn
+	conn     *websocket.Conn
+	finished bool
 }
 
 func (c *ChatCompletionStream) Recv() (ChatCompletionResponse, error) {
+	if c.finished {
+		return ChatCompletionResponse{}, io.EOF
+	}
 	for {
 		_, msg, err := c.conn.ReadMessage()
 		if err != nil {
@@ -105,7 +115,8 @@ func (c *ChatCompletionStream) Recv() (ChatCompletionResponse, error) {
 			return ChatCompletionResponse{}, errors.New(response.Header.Message)
 		}
 		if response.Payload.Choices.Status == 2 {
-			return response, io.EOF
+			c.finished = true
+			return response, nil
 		}
 		//if len(response.Payload.Choices.Text) <= 0 {
 		//	return ChatCompletionResponse{}, errors.New("no text in response")

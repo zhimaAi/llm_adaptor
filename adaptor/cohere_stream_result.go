@@ -13,9 +13,19 @@ func (r *CohereStreamResult) Read() (ZhimaChatCompletionResponse, error) {
 	if err != nil {
 		return ZhimaChatCompletionResponse{}, err
 	}
+	content := responseCohere.Delta.Message.Content
+	result, reasoningContent := cohereTextAndThinking([]cohere.ChatContent{content})
+	promptTokens := responseCohere.Delta.Usage.Tokens.InputTokens
+	completionTokens := responseCohere.Delta.Usage.Tokens.OutputTokens
+	if responseCohere.Type == "" && result == "" && reasoningContent == "" {
+		result = responseCohere.Text
+		promptTokens = responseCohere.Response.Meta.Tokens.InputTokens
+		completionTokens = responseCohere.Response.Meta.Tokens.OutputTokens
+	}
 	return ZhimaChatCompletionResponse{
-		Result:          responseCohere.Text,
-		PromptToken:     responseCohere.Response.Meta.Tokens.InputTokens,
-		CompletionToken: responseCohere.Response.Meta.Tokens.OutputTokens,
+		Result:           result,
+		ReasoningContent: reasoningContent,
+		PromptToken:      promptTokens,
+		CompletionToken:  completionTokens,
 	}, nil
 }

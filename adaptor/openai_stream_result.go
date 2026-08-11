@@ -3,6 +3,8 @@
 package adaptor
 
 import (
+	"strings"
+
 	"github.com/zhimaAi/llm_adaptor/api/openai"
 	"github.com/zhimaAi/llm_adaptor/basics"
 )
@@ -29,7 +31,7 @@ func (r *OpenAIStreamResult) Read() (ZhimaChatCompletionResponse, error) {
 	var toolCalls basics.ToolCalls
 	if len(responseOpenAI.Choices) > 0 {
 		result = responseOpenAI.Choices[0].Delta.Content
-		reasoningContent = responseOpenAI.Choices[0].Delta.ReasoningContent
+		reasoningContent = responseOpenAI.Choices[0].Delta.GetReasoningContent()
 		// Compatible with moonlight
 		if responseOpenAI.Choices[0].Usage.PromptTokens > 0 {
 			promptTokens = responseOpenAI.Choices[0].Usage.PromptTokens
@@ -48,6 +50,37 @@ func (r *OpenAIStreamResult) Read() (ZhimaChatCompletionResponse, error) {
 		PromptToken:       promptTokens,
 		CompletionToken:   completionTokens,
 	}, nil
+}
+
+type miniMaxStreamResult struct {
+	*OpenAIStreamResult
+	contentBuffer   string
+	reasoningBuffer string
+}
+
+func (r *miniMaxStreamResult) Read() (ZhimaChatCompletionResponse, error) {
+	response, err := r.OpenAIStreamResult.Read()
+	if err != nil {
+		return response, err
+	}
+	response.Result = cumulativeDelta(response.Result, &r.contentBuffer)
+	response.ReasoningContent = cumulativeDelta(response.ReasoningContent, &r.reasoningBuffer)
+	return response, nil
+}
+
+func cumulativeDelta(current string, previous *string) string {
+	if current == "" {
+		return ""
+	}
+	if strings.HasPrefix(current, *previous) {
+		delta := current[len(*previous):]
+		*previous = current
+		return delta
+	}
+
+	// Be tolerant if an endpoint switches back to standard token deltas.
+	*previous += current
+	return current
 }
 
 type OpenAIImageGenerationStreamResult struct {

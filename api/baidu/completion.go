@@ -31,6 +31,12 @@ type ChatCompletionRequest struct {
 	UserId          string        `json:"user_id,omitempty"`
 	Functions       []Function    `json:"functions,omitempty"`
 	Tools           []interface{} `json:"tools,omitempty"`
+	Thinking        *Thinking     `json:"thinking,omitempty"`
+	EnableThinking  *bool         `json:"enable_thinking,omitempty"`
+}
+
+type Thinking struct {
+	Type string `json:"type"`
 }
 type Function struct {
 	Name        string      `json:"name"`
