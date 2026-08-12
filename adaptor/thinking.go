@@ -56,13 +56,14 @@ func applyThinking[T thinkingRequest](meta Meta, request T, apiVersion ...string
 		case "deepseek", "moonshot", "zhipu", "doubao":
 			req.Thinking = enabledOrDisabledThinking(meta.EnabledThinking)
 		case "minimax":
-			// MiniMax-M3 uses adaptive to enable thinking. M2.x models cannot disable it.
-			thinkingType := openai.ThinkingTypeDisabled
-			if meta.EnabledThinking {
-				thinkingType = openai.ThinkingTypeAdaptive
+			if miniMaxUsesThinkingToggle(meta.Model) {
+				thinkingType := openai.ThinkingTypeDisabled
+				if meta.EnabledThinking {
+					thinkingType = openai.ThinkingTypeAdaptive
+				}
+				req.Thinking = &openai.Thinking{Type: thinkingType}
 			}
-			req.Thinking = &openai.Thinking{Type: thinkingType}
-			// MiniMax-M3 uses max_completion_tokens; max_tokens is deprecated.
+			// MiniMax reasoning models use max_completion_tokens; max_tokens is deprecated.
 			req.MaxCompletionTokens = req.MaxTokens
 			req.MaxTokens = 0
 			// Keep thinking outside content so it can be returned as ReasoningContent.
@@ -123,14 +124,20 @@ func applyThinking[T thinkingRequest](meta Meta, request T, apiVersion ...string
 		// Thinking requests only accept the default temperature.
 		req.Temperature = 0
 	case *gemini.ChatCompletionRequest:
-		budget := 0
-		if meta.EnabledThinking {
-			budget = -1
+		thinkingConfig := &gemini.ThinkingConfig{IncludeThoughts: meta.EnabledThinking}
+		if geminiUsesThinkingLevel(meta.Model) {
+			thinkingConfig.ThinkingLevel = "minimal"
+			if meta.EnabledThinking {
+				thinkingConfig.ThinkingLevel = "high"
+			}
+		} else {
+			budget := 0
+			if meta.EnabledThinking {
+				budget = -1
+			}
+			thinkingConfig.ThinkingBudget = &budget
 		}
-		req.GenerationConfig.ThinkingConfig = &gemini.ThinkingConfig{
-			ThinkingBudget:  &budget,
-			IncludeThoughts: meta.EnabledThinking,
-		}
+		req.GenerationConfig.ThinkingConfig = thinkingConfig
 	case *cohere.ChatCompletionRequest:
 		typeValue := "disabled"
 		if meta.EnabledThinking {
@@ -150,6 +157,14 @@ func applyThinking[T thinkingRequest](meta Meta, request T, apiVersion ...string
 	case *tencentHunyuan.ChatCompletionsRequest:
 		req.EnableThinking = &meta.EnabledThinking
 	}
+}
+
+func miniMaxUsesThinkingToggle(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "minimax-m3")
+}
+
+func geminiUsesThinkingLevel(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gemini-3")
 }
 
 func baiduUsesEnableThinking(model string) bool {
