@@ -3,9 +3,6 @@
 package adaptor
 
 import (
-	"errors"
-	"io"
-
 	"github.com/zhimaAi/llm_adaptor/api/spark"
 	"github.com/zhimaAi/llm_adaptor/basics"
 )
@@ -16,32 +13,22 @@ type SparkStreamResult struct {
 
 func (r *SparkStreamResult) Read() (resp ZhimaChatCompletionResponse, err error) {
 	responseSpark, err := r.Recv()
-	var toolCalls basics.ToolCalls
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			if len(responseSpark.Payload.Choices.Text[0].FunctionCall.Name) > 0 {
-				toolCalls = append(toolCalls, basics.NewFunctionToolCall("", responseSpark.Payload.Choices.Text[0].FunctionCall.Name, responseSpark.Payload.Choices.Text[0].FunctionCall.Arguments))
-			}
-			resp = ZhimaChatCompletionResponse{
-				Result:            responseSpark.Payload.Choices.Text[0].Content,
-				ToolCalls:         toolCalls,
-				FunctionToolCalls: toolCalls.FunctionToolCalls(),
-				PromptToken:       responseSpark.Payload.Usage.Text.PromptTokens,
-				CompletionToken:   responseSpark.Payload.Usage.Text.CompletionTokens,
-			}
-		}
-	} else {
-		if len(responseSpark.Payload.Choices.Text[0].FunctionCall.Name) > 0 {
-			toolCalls = append(toolCalls, basics.NewFunctionToolCall("", responseSpark.Payload.Choices.Text[0].FunctionCall.Name, responseSpark.Payload.Choices.Text[0].FunctionCall.Arguments))
-		}
-		resp = ZhimaChatCompletionResponse{
-			Result:            responseSpark.Payload.Choices.Text[0].Content,
-			ToolCalls:         toolCalls,
-			FunctionToolCalls: toolCalls.FunctionToolCalls(),
-			PromptToken:       responseSpark.Payload.Usage.Text.PromptTokens,
-			CompletionToken:   responseSpark.Payload.Usage.Text.CompletionTokens,
-		}
+		return ZhimaChatCompletionResponse{}, err
 	}
 
-	return
+	resp.PromptToken = responseSpark.Payload.Usage.Text.PromptTokens
+	resp.CompletionToken = responseSpark.Payload.Usage.Text.CompletionTokens
+	var toolCalls basics.ToolCalls
+	if len(responseSpark.Payload.Choices.Text) == 0 {
+		return resp, nil
+	}
+	if len(responseSpark.Payload.Choices.Text[0].FunctionCall.Name) > 0 {
+		toolCalls = append(toolCalls, basics.NewFunctionToolCall("", responseSpark.Payload.Choices.Text[0].FunctionCall.Name, responseSpark.Payload.Choices.Text[0].FunctionCall.Arguments))
+	}
+	resp.Result = responseSpark.Payload.Choices.Text[0].Content
+	resp.ReasoningContent = responseSpark.Payload.Choices.Text[0].ReasoningContent
+	resp.ToolCalls = toolCalls
+	resp.FunctionToolCalls = toolCalls.FunctionToolCalls()
+	return resp, nil
 }

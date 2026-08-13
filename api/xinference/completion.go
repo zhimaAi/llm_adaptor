@@ -15,18 +15,20 @@ import (
 type ImageData []byte
 
 type ChatCompletionMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type ChatCompletionRequest struct {
 	// Model is the model name
 	Model string `json:"model"`
 	// Messages is the messages of the chat
-	Messages    any     `json:"messages"`
-	MaxTokens   int     `json:"max_tokens,omitempty"`
-	Temperature float64 `json:"temperature,omitempty"`
-	Stream      bool    `json:"stream,omitempty"`
+	Messages       any     `json:"messages"`
+	MaxTokens      int     `json:"max_tokens,omitempty"`
+	Temperature    float64 `json:"temperature,omitempty"`
+	Stream         bool    `json:"stream,omitempty"`
+	EnableThinking *bool   `json:"enable_thinking,omitempty"`
 }
 
 type ChatCompletionChoice struct {

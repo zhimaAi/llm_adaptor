@@ -16,8 +16,9 @@ func (r *XinferenceStreamResult) Read() (ZhimaChatCompletionResponse, error) {
 		return ZhimaChatCompletionResponse{}, err
 	}
 	return ZhimaChatCompletionResponse{
-		Result:          responseXinference.Choices[0].Delta.Content,
-		PromptToken:     responseXinference.Usage.PromptTokens,
-		CompletionToken: responseXinference.Usage.CompletionTokens,
+		Result:           responseXinference.Choices[0].Delta.Content,
+		ReasoningContent: responseXinference.Choices[0].Delta.ReasoningContent,
+		PromptToken:      responseXinference.Usage.PromptTokens,
+		CompletionToken:  responseXinference.Usage.CompletionTokens,
 	}, nil
 }

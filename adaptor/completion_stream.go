@@ -82,6 +82,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
+		applyThinking(a.meta, &req)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return nil, err
@@ -154,12 +155,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
-		if tool.InArrayString(a.meta.Corp, []string{`ali`, `siliconflow`}) && a.meta.ChoosableThinking {
-			req.EnableThinking = &a.meta.EnabledThinking
-		}
-		if a.meta.Corp == `deepseek` {
-			req.Thinking = &openai.Thinking{Type: openai.ThinkingTypeDisabled}
-		}
+		applyThinking(a.meta, &req)
 		if client == nil {
 			return &ZhimaChatCompletionStreamResponse{}, errors.New(`corp not supported`)
 		}
@@ -167,7 +163,11 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 		if err != nil {
 			return &ZhimaChatCompletionStreamResponse{}, err
 		}
-		result = &ZhimaChatCompletionStreamResponse{ZhimaStreamResult: &OpenAIStreamResult{stream}}
+		var streamResult ZhimaStreamResult = &OpenAIStreamResult{stream}
+		if a.meta.Corp == "minimax" && req.ReasoningSplit != nil && *req.ReasoningSplit {
+			streamResult = &miniMaxStreamResult{OpenAIStreamResult: &OpenAIStreamResult{stream}}
+		}
+		result = &ZhimaChatCompletionStreamResponse{ZhimaStreamResult: streamResult}
 	case "azure":
 		client := azure.NewClient(a.meta.EndPoint, a.meta.APIVersion, a.meta.APIKey, a.meta.Model)
 		var tools []interface{}
@@ -188,6 +188,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
+		applyThinking(a.meta, &req)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return &ZhimaChatCompletionStreamResponse{}, err
@@ -230,6 +231,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			Functions:       functions,
 			Tools:           tools,
 		}
+		applyThinking(a.meta, &req, client.ApiVersion)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return &ZhimaChatCompletionStreamResponse{}, err
@@ -263,6 +265,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			System:      system,
 			//Tools:       tools,
 		}
+		applyThinking(a.meta, &req)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return &ZhimaChatCompletionStreamResponse{}, err
@@ -286,6 +289,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			Contents:         contents,
 			GenerationConfig: gemini.GenerationConfig{Temperature: req.Temperature, MaxOutputTokens: req.MaxToken},
 		}
+		applyThinking(a.meta, &req)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return &ZhimaChatCompletionStreamResponse{}, err
@@ -315,13 +319,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			MaxTokens:   req.MaxToken,
 			Tools:       tools,
 		}
-		if a.meta.ChoosableThinking {
-			thinking := openai.Thinking{Type: openai.ThinkingTypeDisabled}
-			if a.meta.EnabledThinking {
-				thinking.Type = openai.ThinkingTypeEnabled
-			}
-			req.Thinking = &thinking
-		}
+		applyThinking(a.meta, &req)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return nil, err
@@ -333,25 +331,11 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			client.EndPoint, _ = GenerateClientEndPoint(a)
 		}
 
-		var histories []cohere.ChatHistory
-		n := len(req.Messages)
-		for _, v := range req.Messages[:n-1] {
-			if v.Role == "system" {
-				histories = append(histories, cohere.ChatHistory{Role: "SYSTEM", Message: v.Content})
-			} else if v.Role == "user" {
-				histories = append(histories, cohere.ChatHistory{Role: "USER", Message: v.Content})
-			} else if v.Role == "assistant" {
-				histories = append(histories, cohere.ChatHistory{Role: "CHATBOT", Message: v.Content})
-			}
+		cohereReq, _, err := buildCohereChatCompletionRequest(a.meta, req)
+		if err != nil {
+			return nil, err
 		}
-
-		req := cohere.ChatCompletionRequest{
-			Message:     req.Messages[n-1].Content,
-			ChatHistory: histories,
-			MaxTokens:   req.MaxToken,
-			Temperature: req.Temperature,
-		}
-		stream, err := client.CreateChatCompletionStream(req)
+		stream, err := client.CreateChatCompletionStream(cohereReq)
 		if err != nil {
 			return nil, err
 		}
@@ -381,6 +365,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 				},
 			},
 		}
+		applyThinking(a.meta, &req)
 		if len(textFunctions) > 0 {
 			//req.Payload.Functions = &spark.Function{Text: textFunctions}
 		}
@@ -414,6 +399,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			}
 		}
 		r.Temperature = common.Float64Ptr(req.Temperature)
+		applyThinking(a.meta, r)
 		stream, err := client.CreateChatCompletionStream(*r)
 		if err != nil {
 			return nil, err
@@ -441,6 +427,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			},
 			Tools: tools,
 		}
+		applyThinking(a.meta, &req)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return &ZhimaChatCompletionStreamResponse{}, err
@@ -454,6 +441,7 @@ func (a *Adaptor) CreateChatCompletionStream(req ZhimaChatCompletionRequest) (*Z
 			MaxTokens:   req.MaxToken,
 			Temperature: req.Temperature,
 		}
+		applyThinking(a.meta, &req)
 		stream, err := client.CreateChatCompletionStream(req)
 		if err != nil {
 			return &ZhimaChatCompletionStreamResponse{}, err

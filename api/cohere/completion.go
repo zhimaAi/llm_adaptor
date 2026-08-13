@@ -12,7 +12,9 @@ import (
 )
 
 type ChatCompletionRequest struct {
-	Message           string        `json:"message"`
+	Model             string        `json:"model,omitempty"`
+	Messages          []ChatMessage `json:"messages,omitempty"`
+	Message           string        `json:"message,omitempty"`
 	Stream            bool          `json:"stream,omitempty"`
 	Preamble          string        `json:"preamble,omitempty"`
 	ChatHistory       []ChatHistory `json:"chat_history,omitempty"`
@@ -31,8 +33,16 @@ type ChatCompletionRequest struct {
 	StopSequences     []string      `json:"stop_sequences,omitempty"`
 	FrequencyPenalty  int           `json:"frequency_penalty,omitempty"`
 	PresencePenalty   int           `json:"presence_penalty,omitempty"`
+	Thinking          *Thinking     `json:"thinking,omitempty"`
 }
 
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// ChatHistory and Connector retain the V1 Chat API request schema for callers
+// that use the api/cohere package directly.
 type ChatHistory struct {
 	Role    string `json:"role"`
 	Message string `json:"message"`
@@ -43,13 +53,28 @@ type Connector struct {
 	UserAccessToken string `json:"access_token,omitempty"`
 }
 
-type ChatCompletionResponse struct {
-	Text         string       `json:"text"`
-	GenerationId string       `json:"generation_id"`
-	Documents    []Document   `json:"documents"`
-	Meta         ResponseMeta `json:"meta"`
+type Thinking struct {
+	Type        string `json:"type,omitempty"`
+	TokenBudget int    `json:"token_budget,omitempty"`
 }
 
+type ChatContent struct {
+	Type     string `json:"type,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
+}
+
+type ChatResponseMessage struct {
+	Role    string        `json:"role"`
+	Content []ChatContent `json:"content"`
+}
+
+type ChatUsage struct {
+	BilledUnits BilledUnits `json:"billed_units"`
+	Tokens      Tokens      `json:"tokens"`
+}
+
+// ResponseMeta is retained for V1 response schemas.
 type ResponseMeta struct {
 	APIVersion  APIVersion  `json:"api_version"`
 	BilledUnits BilledUnits `json:"billed_units"`
@@ -57,12 +82,33 @@ type ResponseMeta struct {
 	Warnings    []string    `json:"warnings"`
 }
 
+type ChatCompletionResponse struct {
+	ID           string              `json:"id"`
+	FinishReason string              `json:"finish_reason"`
+	Message      ChatResponseMessage `json:"message"`
+	Usage        ChatUsage           `json:"usage"`
+	Text         string              `json:"text"`
+	GenerationId string              `json:"generation_id"`
+	Documents    []Document          `json:"documents"`
+	Meta         ResponseMeta        `json:"meta"`
+}
+
 type ChatCompletionStreamResponse struct {
+	Type         string   `json:"type"`
+	Index        int      `json:"index,omitempty"`
 	IsFinished   bool     `json:"is_finished"`
 	EventType    string   `json:"event_type"`
 	Text         string   `json:"text"`
 	Response     Response `json:"response"`
 	FinishReason string   `json:"finish_reason"`
+	Delta        struct {
+		Message struct {
+			Role    string      `json:"role,omitempty"`
+			Content ChatContent `json:"content,omitempty"`
+		} `json:"message,omitempty"`
+		FinishReason string    `json:"finish_reason,omitempty"`
+		Usage        ChatUsage `json:"usage,omitempty"`
+	} `json:"delta"`
 }
 
 type Response struct {
@@ -86,29 +132,36 @@ func (c *ChatCompletionStream) Recv() (ChatCompletionStreamResponse, error) {
 	for {
 		rawLine, readErr := c.StreamReader.Reader.ReadBytes('\n')
 		if readErr != nil {
-			if readErr != io.EOF {
-				c.StreamReader.UnmarshalError()
-				if c.StreamReader.ErrorResponse != nil {
-					return *new(ChatCompletionStreamResponse), fmt.Errorf("unmarshal error, %w", c.StreamReader.ErrorResponse.Error())
-				}
-				return *new(ChatCompletionStreamResponse), readErr
-			} else {
+			if readErr == io.EOF {
 				c.StreamReader.IsFinished = true
-				return *new(ChatCompletionStreamResponse), io.EOF
+				return ChatCompletionStreamResponse{}, io.EOF
 			}
+			c.StreamReader.UnmarshalError()
+			if c.StreamReader.ErrorResponse != nil {
+				return ChatCompletionStreamResponse{}, fmt.Errorf("unmarshal error, %w", c.StreamReader.ErrorResponse.Error())
+			}
+			return ChatCompletionStreamResponse{}, readErr
 		}
 
-		noSpaceLine := bytes.TrimSpace(rawLine)
-		var response ChatCompletionStreamResponse
-		unmarshalErr := basics.JsonDecode(noSpaceLine, &response)
-		if unmarshalErr != nil {
-			return *new(ChatCompletionStreamResponse), unmarshalErr
+		line := bytes.TrimSpace(rawLine)
+		if len(line) == 0 || bytes.HasPrefix(line, []byte("event:")) || bytes.HasPrefix(line, []byte(":")) {
+			continue
 		}
-		if response.EventType == "stream-end" || response.IsFinished {
+		if bytes.HasPrefix(line, []byte("data:")) {
+			line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		}
+		if bytes.Equal(line, []byte("[DONE]")) {
 			c.StreamReader.IsFinished = true
-			return *new(ChatCompletionStreamResponse), nil
+			return ChatCompletionStreamResponse{}, io.EOF
 		}
 
+		var response ChatCompletionStreamResponse
+		if err := basics.JsonDecode(line, &response); err != nil {
+			return ChatCompletionStreamResponse{}, err
+		}
+		if response.Type == "message-end" || response.EventType == "stream-end" || response.IsFinished {
+			c.StreamReader.IsFinished = true
+		}
 		return response, nil
 	}
 }

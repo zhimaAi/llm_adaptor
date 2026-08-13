@@ -35,6 +35,9 @@ type ChatCompletionRequest struct {
 	// Stream enable streaming of returned response; true by default.
 	Stream *bool `json:"stream,omitempty"`
 
+	// Think controls whether supported models return a separate thinking trace.
+	Think *bool `json:"think,omitempty"`
+
 	// Format is the format to return the response in (e.g. "json").
 	Format string `json:"format"`
 

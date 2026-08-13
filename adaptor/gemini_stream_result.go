@@ -13,9 +13,11 @@ func (c *GeminiStreamResult) Read() (ZhimaChatCompletionResponse, error) {
 	if err != nil {
 		return ZhimaChatCompletionResponse{}, err
 	}
+	result, reasoningContent := geminiTextAndThinking(responseGemini.Candidates[0].Content.Parts)
 	return ZhimaChatCompletionResponse{
-		Result:          responseGemini.Candidates[0].Content.Parts[0].Text,
-		PromptToken:     responseGemini.UsageMetadata.PromptTokenCount,
-		CompletionToken: responseGemini.UsageMetadata.CandidatesTokenCount,
+		Result:           result,
+		ReasoningContent: reasoningContent,
+		PromptToken:      responseGemini.UsageMetadata.PromptTokenCount,
+		CompletionToken:  geminiCompletionTokens(responseGemini.UsageMetadata),
 	}, nil
 }

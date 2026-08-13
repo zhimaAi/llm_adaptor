@@ -16,9 +16,13 @@ func (r *OllamaStreamResult) Read() (ZhimaChatCompletionResponse, error) {
 		return ZhimaChatCompletionResponse{}, err
 	}
 	toolCalls := responseOllama.Message.ToolCalls
+	reasoningContent := responseOllama.Message.ReasoningContent
+	if reasoningContent == "" {
+		reasoningContent = responseOllama.Message.Thinking
+	}
 	return ZhimaChatCompletionResponse{
 		Result:            responseOllama.Message.Content,
-		ReasoningContent:  responseOllama.Message.ReasoningContent,
+		ReasoningContent:  reasoningContent,
 		ToolCalls:         toolCalls,
 		FunctionToolCalls: toolCalls.FunctionToolCalls(),
 		PromptToken:       responseOllama.Metrics.PromptEvalCount,

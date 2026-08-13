@@ -15,6 +15,8 @@ type Content struct {
 }
 type Part struct {
 	Text             string            `json:"text"`
+	Thought          bool              `json:"thought,omitempty"`
+	ThoughtSignature string            `json:"thoughtSignature,omitempty"`
 	InlineData       *Blob             `json:"inlineData,omitempty"`
 	FunctionCall     string            `json:"functionCall,omitempty"`
 	FunctionResponse *FunctionResponse `json:"functionResponse,omitempty"`

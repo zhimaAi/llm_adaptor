@@ -28,8 +28,30 @@ type ChatCompletionResponseMessage struct {
 	Role             string                        `json:"role"`
 	Content          string                        `json:"content"`
 	ReasoningContent string                        `json:"reasoning_content"`
+	Reasoning        string                        `json:"reasoning,omitempty"`
+	ReasoningDetails []ReasoningDetail             `json:"reasoning_details,omitempty"`
 	ToolCalls        basics.ToolCalls              `json:"tool_calls"`
 	Images           []ChatCompletionResponseImage `json:"images"`
+}
+
+type ReasoningDetail struct {
+	Type      string `json:"type,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Signature string `json:"signature,omitempty"`
+}
+
+func (m ChatCompletionResponseMessage) GetReasoningContent() string {
+	if m.ReasoningContent != "" {
+		return m.ReasoningContent
+	}
+	if m.Reasoning != "" {
+		return m.Reasoning
+	}
+	var reasoning strings.Builder
+	for _, detail := range m.ReasoningDetails {
+		reasoning.WriteString(detail.Text)
+	}
+	return reasoning.String()
 }
 
 type ThinkingType string
@@ -37,31 +59,47 @@ type ThinkingType string
 const (
 	ThinkingTypeEnabled  ThinkingType = "enabled"
 	ThinkingTypeDisabled ThinkingType = "disabled"
+	ThinkingTypeAdaptive ThinkingType = "adaptive"
 )
 
 type Thinking struct {
 	Type ThinkingType `json:"type"`
 }
 
+type Reasoning struct {
+	Enabled bool `json:"enabled"`
+}
+
+type ReasoningEffort string
+
+const (
+	ReasoningEffortNone   ReasoningEffort = "none"
+	ReasoningEffortMedium ReasoningEffort = "medium"
+)
+
 type ChatCompletionRequest struct {
-	Model            string         `json:"model"`
-	Messages         any            `json:"messages"`
-	Stream           bool           `json:"stream,omitempty"`
-	StreamOptions    *StreamOptions `json:"stream_options,omitempty"`
-	FrequencyPenalty int            `json:"frequency_penalty,omitempty"`
-	MaxTokens        int            `json:"max_tokens,omitempty"`
-	N                int            `json:"n,omitempty"`
-	PresencePenalty  int            `json:"presence_penalty,omitempty"`
-	ResponseFormat   string         `json:"response_format,omitempty"`
-	Seed             int            `json:"seed,omitempty"`
-	Temperature      float64        `json:"temperature,omitempty"`
-	TopP             int            `json:"top_p,omitempty"`
-	User             string         `json:"user,omitempty"`
-	Tools            []interface{}  `json:"tools,omitempty"`
-	Thinking         *Thinking      `json:"thinking,omitempty"`
-	EnableThinking   *bool          `json:"enable_thinking,omitempty"`
-	Modalities       []string       `json:"modalities,omitempty"`   //openrouter
-	ImageConfig      any            `json:"image_config,omitempty"` //openrouter
+	Model               string          `json:"model"`
+	Messages            any             `json:"messages"`
+	Stream              bool            `json:"stream,omitempty"`
+	StreamOptions       *StreamOptions  `json:"stream_options,omitempty"`
+	FrequencyPenalty    int             `json:"frequency_penalty,omitempty"`
+	MaxTokens           int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+	N                   int             `json:"n,omitempty"`
+	PresencePenalty     int             `json:"presence_penalty,omitempty"`
+	ResponseFormat      string          `json:"response_format,omitempty"`
+	Seed                int             `json:"seed,omitempty"`
+	Temperature         float64         `json:"temperature,omitempty"`
+	TopP                int             `json:"top_p,omitempty"`
+	User                string          `json:"user,omitempty"`
+	Tools               []interface{}   `json:"tools,omitempty"`
+	Thinking            *Thinking       `json:"thinking,omitempty"`
+	EnableThinking      *bool           `json:"enable_thinking,omitempty"`
+	Reasoning           *Reasoning      `json:"reasoning,omitempty"`
+	ReasoningEffort     ReasoningEffort `json:"reasoning_effort,omitempty"`
+	ReasoningSplit      *bool           `json:"reasoning_split,omitempty"`
+	Modalities          []string        `json:"modalities,omitempty"`   //openrouter
+	ImageConfig         any             `json:"image_config,omitempty"` //openrouter
 }
 
 type StreamOptions struct {

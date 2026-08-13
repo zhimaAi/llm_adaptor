@@ -70,6 +70,9 @@ func (c *Client) CreateEmbeddings(req EmbeddingRequest) (EmbeddingResponse, erro
 func (c *Client) CreateChatCompletion(req ChatCompletionRequest) (ChatCompletionResponse, error) {
 
 	url := c.EndPoint + "/v1/chat"
+	if req.Model != "" && len(req.Messages) > 0 {
+		url = c.EndPoint + "/v2/chat"
+	}
 	headers := []common.Header{
 		{Key: "Authorization", Value: "Bearer " + c.APIKey},
 	}
@@ -95,11 +98,14 @@ func (c *Client) CreateChatCompletion(req ChatCompletionRequest) (ChatCompletion
 func (c *Client) CreateChatCompletionStream(req ChatCompletionRequest) (*ChatCompletionStream, error) {
 
 	url := c.EndPoint + "/v1/chat"
+	if req.Model != "" && len(req.Messages) > 0 {
+		url = c.EndPoint + "/v2/chat"
+	}
 	headers := []common.Header{
 		{Key: "Authorization", Value: "Bearer " + c.APIKey},
 	}
 	req.Stream = true
-	responseRaw, err := common.HttpPost(url, headers, nil, req)
+	responseRaw, err := common.HttpStreamPost(url, headers, nil, req)
 	if err != nil {
 		return nil, err
 	}

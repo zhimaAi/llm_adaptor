@@ -25,6 +25,7 @@ func (r *ClaudeStreamResult) Read() (ZhimaChatCompletionResponse, error) {
 	}
 	return ZhimaChatCompletionResponse{
 		Result:            responseClaude.Delta.Text,
+		ReasoningContent:  responseClaude.Delta.Thinking,
 		ToolCalls:         toolCalls,
 		FunctionToolCalls: toolCalls.FunctionToolCalls(),
 		PromptToken:       responseClaude.Message.Usage.InputTokens,

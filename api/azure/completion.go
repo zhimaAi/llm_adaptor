@@ -13,26 +13,29 @@ import (
 )
 
 type ChatCompletionResponseMessage struct {
-	Role      string           `json:"role"`
-	Content   string           `json:"content"`
-	ToolCalls basics.ToolCalls `json:"tool_calls"`
+	Role             string           `json:"role"`
+	Content          string           `json:"content"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
+	ToolCalls        basics.ToolCalls `json:"tool_calls"`
 }
 
 type ChatCompletionRequest struct {
-	Model            string        `json:"model"`
-	Messages         any           `json:"messages"`
-	Stream           bool          `json:"stream,omitempty"`
-	FrequencyPenalty int           `json:"frequency_penalty,omitempty"`
-	Role             string        `json:"role,omitempty"`
-	MaxTokens        int           `json:"max_tokens,omitempty"`
-	N                int           `json:"n,omitempty"`
-	PresencePenalty  int           `json:"presence_penalty,omitempty"`
-	ResponseFormat   string        `json:"response_format,omitempty"`
-	Seed             int           `json:"seed,omitempty"`
-	Temperature      float64       `json:"temperature,omitempty"`
-	TopP             int           `json:"top_p,omitempty"`
-	User             string        `json:"user,omitempty"`
-	Tools            []interface{} `json:"tools"`
+	Model               string        `json:"model"`
+	Messages            any           `json:"messages"`
+	Stream              bool          `json:"stream,omitempty"`
+	FrequencyPenalty    int           `json:"frequency_penalty,omitempty"`
+	Role                string        `json:"role,omitempty"`
+	MaxTokens           int           `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int           `json:"max_completion_tokens,omitempty"`
+	N                   int           `json:"n,omitempty"`
+	PresencePenalty     int           `json:"presence_penalty,omitempty"`
+	ResponseFormat      string        `json:"response_format,omitempty"`
+	Seed                int           `json:"seed,omitempty"`
+	Temperature         float64       `json:"temperature,omitempty"`
+	TopP                int           `json:"top_p,omitempty"`
+	User                string        `json:"user,omitempty"`
+	Tools               []interface{} `json:"tools"`
+	ReasoningEffort     string        `json:"reasoning_effort,omitempty"`
 }
 
 type ChatCompletionChoice struct {

@@ -13,15 +13,22 @@ import (
 )
 
 type ChatCompletionRequest struct {
-	Model       string   `json:"model"`
-	MaxTokens   int      `json:"max_tokens"`
-	Messages    any      `json:"messages"`
-	Stream      bool     `json:"stream,omitempty"`
-	Metadata    Metadata `json:"metadata,omitempty"`
-	System      string   `json:"system,omitempty"`
-	Temperature float64  `json:"temperature,omitempty"`
-	TopP        float32  `json:"top_p,omitempty"`
-	Tools       []Tool   `json:"tools,omitempty"`
+	Model       string    `json:"model"`
+	MaxTokens   int       `json:"max_tokens"`
+	Messages    any       `json:"messages"`
+	Stream      bool      `json:"stream,omitempty"`
+	Metadata    Metadata  `json:"metadata,omitempty"`
+	System      string    `json:"system,omitempty"`
+	Temperature float64   `json:"temperature,omitempty"`
+	TopP        float32   `json:"top_p,omitempty"`
+	Tools       []Tool    `json:"tools,omitempty"`
+	Thinking    *Thinking `json:"thinking,omitempty"`
+}
+
+type Thinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	Display      string `json:"display,omitempty"`
 }
 type Tool struct {
 	Name        string      `json:"name"`
@@ -45,11 +52,13 @@ type ChatCompletionResponse struct {
 }
 
 type Content struct {
-	Type  string            `json:"type"`
-	Text  string            `json:"text"`
-	Id    string            `json:"id"`
-	Name  string            `json:"name"`
-	Input map[string]string `json:"input"`
+	Type      string            `json:"type"`
+	Text      string            `json:"text"`
+	Thinking  string            `json:"thinking,omitempty"`
+	Signature string            `json:"signature,omitempty"`
+	Id        string            `json:"id"`
+	Name      string            `json:"name"`
+	Input     map[string]string `json:"input"`
 }
 
 type Usage struct {
@@ -67,6 +76,8 @@ type ChatCompletionStreamResponse struct {
 type Delta struct {
 	Type         string `json:"type"`
 	Text         string `json:"text"`
+	Thinking     string `json:"thinking,omitempty"`
+	Signature    string `json:"signature,omitempty"`
 	StopReason   string `json:"stop_reason"`
 	EndTurn      string `json:"end_turn"`
 	StopSequence string `json:"stop_sequence"`

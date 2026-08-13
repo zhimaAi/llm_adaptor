@@ -18,12 +18,19 @@ type ChatCompletionRequest struct {
 }
 
 type GenerationConfig struct {
-	StopSequences   []string `json:"stopSequences,omitempty"`
-	CandidateCount  int      `json:"candidateCount,omitempty"`
-	MaxOutputTokens int      `json:"maxOutputTokens,omitempty"`
-	Temperature     float64  `json:"temperature,omitempty"`
-	TopP            int      `json:"topP,omitempty"`
-	TopK            int      `json:"topK,omitempty"`
+	StopSequences   []string        `json:"stopSequences,omitempty"`
+	CandidateCount  int             `json:"candidateCount,omitempty"`
+	MaxOutputTokens int             `json:"maxOutputTokens,omitempty"`
+	Temperature     float64         `json:"temperature,omitempty"`
+	TopP            int             `json:"topP,omitempty"`
+	TopK            int             `json:"topK,omitempty"`
+	ThinkingConfig  *ThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type ThinkingConfig struct {
+	ThinkingBudget  *int   `json:"thinkingBudget,omitempty"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
+	IncludeThoughts bool   `json:"includeThoughts,omitempty"`
 }
 
 type ChatCompletionResponse struct {
@@ -46,6 +53,7 @@ type CitationMetadata struct {
 type UsageMetadata struct {
 	PromptTokenCount     int `json:"promptTokenCount"`
 	CandidatesTokenCount int `json:"candidatesTokenCount"`
+	ThoughtsTokenCount   int `json:"thoughtsTokenCount"`
 	TotalTokenCount      int `json:"totalTokenCount"`
 }
 type CitationSource struct {
