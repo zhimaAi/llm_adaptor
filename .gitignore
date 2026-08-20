@@ -20,5 +20,8 @@
 # log
 logs/
 
+# Project-local design documents
+docs/
+
 # CodeBuddy
 CODEBUDDY.md

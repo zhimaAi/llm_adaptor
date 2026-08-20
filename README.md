@@ -76,7 +76,3 @@ resp, err := client.Speech.Create(ctx, &speech.CreateRequest{
 - v2 不支持 SecretKey、AK/SK 或 APPID 鉴权。
 
 具体供应商可用能力以 `Client.ProviderInfo()` 返回的 `Capabilities` 为准。
-
-## 设计与迁移
-
-完整重构与 ChatWiki 迁移说明见 [docs/refactor-v2-plan.md](docs/refactor-v2-plan.md)。

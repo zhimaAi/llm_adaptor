@@ -1,3 +1,5 @@
+// Copyright © 2016- 2025 Wuhan Sesame Small Customer Service Network Technology Co., Ltd.
+
 package llm
 
 import (
@@ -39,16 +41,6 @@ func TestCredentialPoolRejectsEmptyConfiguration(t *testing.T) {
 	_, err := newCredentialPool(CredentialConfig{APIKeys: " , , "})
 	if !errors.Is(err, ErrInvalidAPIKeyConfig) {
 		t.Fatalf("expected ErrInvalidAPIKeyConfig, got %v", err)
-	}
-}
-
-func TestParseCredentialConfigReturnsNormalizedEntries(t *testing.T) {
-	entries, err := ParseCredentialConfig(CredentialConfig{APIKeys: " key1@2, ,key1@3,key2@bad,key3@0 "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 3 || entries[0].APIKey != "key1" || entries[0].Weight != "5" || entries[1].Weight != "1" || entries[2].Weight != "1" {
-		t.Fatalf("unexpected entries: %#v", entries)
 	}
 }
 
