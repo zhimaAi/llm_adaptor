@@ -21,19 +21,13 @@ type aliProvider struct{ *openAICompatibleProvider }
 
 func newAliProvider(config ClientConfig) *aliProvider {
 	return &aliProvider{newOpenAICompatibleProvider(config, ProviderInfo{
-		ID: ProviderAli, DefaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		ID: ProviderAli, DefaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", DefaultServiceBaseURL: aliDefaultServiceBaseURL,
 		Capabilities: []Capability{CapabilityChat, CapabilityEmbedding, CapabilityRerank, CapabilityImage},
 	})}
 }
 
 func (p *aliProvider) serviceBaseURL() string {
-	if value, ok := p.config.Extra["service_base_url"].(string); ok && strings.TrimSpace(value) != "" {
-		return strings.TrimRight(strings.TrimSpace(value), "/")
-	}
-	if strings.Contains(p.config.BaseURL, "/compatible-mode/") {
-		return strings.Split(p.config.BaseURL, "/compatible-mode/")[0]
-	}
-	return aliDefaultServiceBaseURL
+	return p.config.ServiceBaseURL
 }
 
 func (p *aliProvider) createRerank(ctx context.Context, selected credential, request *rerank.CreateRequest) (*rerank.CreateResponse, error) {
@@ -59,7 +53,7 @@ func (p *aliProvider) createRerank(ctx context.Context, selected credential, req
 	for key, value := range request.ExtraBody {
 		body[key] = value
 	}
-	raw, err := p.doJSON(ctx, selected, p.serviceBaseURL()+aliRerankPath, body)
+	raw, err := p.doJSON(ctx, selected, joinURLPath(p.serviceBaseURL(), aliRerankPath), body)
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +88,16 @@ func (p *aliProvider) generateImage(ctx context.Context, selected credential, re
 	for key, value := range request.ExtraBody {
 		parameters[key] = value
 	}
+	content := []any{map[string]any{"text": request.Prompt}}
+	for _, inputImage := range request.Image {
+		content = append(content, map[string]any{"image": inputImage})
+	}
 	body := map[string]any{
 		"model":      request.Model,
-		"input":      map[string]any{"messages": []any{map[string]any{"role": "user", "content": []any{map[string]any{"text": request.Prompt}}}}},
+		"input":      map[string]any{"messages": []any{map[string]any{"role": "user", "content": content}}},
 		"parameters": parameters,
 	}
-	raw, err := p.doJSON(ctx, selected, p.serviceBaseURL()+aliImagePath, body)
+	raw, err := p.doJSON(ctx, selected, joinURLPath(p.serviceBaseURL(), aliImagePath), body)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +132,9 @@ func (p *aliProvider) generateImage(ctx context.Context, selected credential, re
 			}
 		}
 	}
+	if err := normalizeImageResponse(ctx, p.config, ProviderAli, selected.hint, request, result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -162,6 +163,8 @@ func (s *singleImageStream) Recv() (*image.StreamChunk, error) {
 	if len(s.response.Data) > 0 {
 		chunk.URL = s.response.Data[0].URL
 		chunk.B64JSON = s.response.Data[0].B64JSON
+		chunk.Format = s.response.Data[0].Format
+		chunk.MIMEType = s.response.Data[0].MIMEType
 	}
 	return chunk, nil
 }

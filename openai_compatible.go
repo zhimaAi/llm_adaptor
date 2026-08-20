@@ -30,6 +30,7 @@ type openAICompatibleProvider struct {
 	embeddingPath       string
 	imagePath           string
 	rerankPath          string
+	rerankBaseURL       string
 	rerankDocumentsKey  string
 	rerankTopKey        string
 }
@@ -90,7 +91,7 @@ func (p *openAICompatibleProvider) streamChat(ctx context.Context, selected cred
 		cancel()
 		return nil, err
 	}
-	return newThinkTagStream(newOpenAIChatStream(response.Body, cancel)), nil
+	return newThinkTagStream(newOpenAIChatStream(response.Body, cancel, p.providerInfo.ID, selected.hint)), nil
 }
 
 func (p *openAICompatibleProvider) createEmbedding(ctx context.Context, selected credential, request *embedding.CreateRequest) (*embedding.CreateResponse, error) {
@@ -143,6 +144,9 @@ func (p *openAICompatibleProvider) generateImage(ctx context.Context, selected c
 	}
 	result.RawResponse = append(result.RawResponse[:0], raw...)
 	result.ExtraFields = extractExtraFields(raw, "created", "data", "usage")
+	if err := normalizeImageResponse(ctx, p.config, p.providerInfo.ID, selected.hint, request, result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -165,7 +169,7 @@ func (p *openAICompatibleProvider) streamImage(ctx context.Context, selected cre
 		cancel()
 		return nil, err
 	}
-	return newOpenAIImageStream(response.Body, cancel), nil
+	return newOpenAIImageStream(streamContext, response.Body, cancel, p.config, p.providerInfo.ID, selected.hint, request.GenerateRequest), nil
 }
 
 func (p *openAICompatibleProvider) createRerank(ctx context.Context, selected credential, request *rerank.CreateRequest) (*rerank.CreateResponse, error) {
@@ -200,7 +204,11 @@ func (p *openAICompatibleProvider) createRerank(ctx context.Context, selected cr
 	for key, value := range request.ExtraBody {
 		body[key] = value
 	}
-	raw, err := p.doJSON(ctx, selected, p.rerankPath, body)
+	rerankEndpoint := p.rerankPath
+	if p.rerankBaseURL != "" {
+		rerankEndpoint = joinURLPath(p.rerankBaseURL, p.rerankPath)
+	}
+	raw, err := p.doJSON(ctx, selected, rerankEndpoint, body)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +240,7 @@ func (p *openAICompatibleProvider) doJSON(ctx context.Context, selected credenti
 func (p *openAICompatibleProvider) doStream(ctx context.Context, selected credential, path string, body any) (*http.Response, error) {
 	endpoint := path
 	if !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") {
-		endpoint = p.config.BaseURL + path
+		endpoint = joinURLPath(p.config.BaseURL, path)
 	}
 	authorization := ""
 	if p.authorizationPrefix != nil && selected.apiKey != "" {
@@ -259,20 +267,27 @@ type openAIChatStream struct {
 	closeOnce sync.Once
 	finished  bool
 	cancel    context.CancelFunc
+	provider  Provider
+	hint      string
 }
 
 type openAIImageStream struct {
+	ctx       context.Context
 	body      io.ReadCloser
 	scanner   *bufio.Scanner
 	closeOnce sync.Once
 	finished  bool
 	cancel    context.CancelFunc
+	provider  Provider
+	hint      string
+	config    ClientConfig
+	request   image.GenerateRequest
 }
 
-func newOpenAIImageStream(body io.ReadCloser, cancel context.CancelFunc) *openAIImageStream {
+func newOpenAIImageStream(ctx context.Context, body io.ReadCloser, cancel context.CancelFunc, config ClientConfig, provider Provider, hint string, request image.GenerateRequest) *openAIImageStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
-	return &openAIImageStream{body: body, scanner: scanner, cancel: cancel}
+	return &openAIImageStream{ctx: ctx, body: body, scanner: scanner, cancel: cancel, config: config, provider: provider, hint: hint, request: request}
 }
 
 func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
@@ -289,9 +304,20 @@ func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
 			s.finished = true
 			return nil, io.EOF
 		}
+		if err := decodeStreamAPIError(s.provider, s.hint, line); err != nil {
+			s.finished = true
+			return nil, err
+		}
 		chunk := &image.StreamChunk{}
 		if err := json.Unmarshal(line, chunk); err != nil {
 			return nil, err
+		}
+		if chunk.URL != "" || chunk.B64JSON != "" {
+			data := image.Data{URL: chunk.URL, B64JSON: chunk.B64JSON}
+			if err := normalizeImageData(s.ctx, s.config, s.provider, s.hint, &s.request, &data); err != nil {
+				return nil, err
+			}
+			chunk.URL, chunk.B64JSON, chunk.Format, chunk.MIMEType = data.URL, data.B64JSON, data.Format, data.MIMEType
 		}
 		chunk.RawResponse = append(chunk.RawResponse[:0], line...)
 		chunk.ExtraFields = extractExtraFields(line, "type", "model", "created", "image_index", "url", "b64_json", "size", "usage")
@@ -316,10 +342,10 @@ func (s *openAIImageStream) Close() error {
 	return err
 }
 
-func newOpenAIChatStream(body io.ReadCloser, cancel context.CancelFunc) *openAIChatStream {
+func newOpenAIChatStream(body io.ReadCloser, cancel context.CancelFunc, provider Provider, hint string) *openAIChatStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
-	return &openAIChatStream{body: body, scanner: scanner, cancel: cancel}
+	return &openAIChatStream{body: body, scanner: scanner, cancel: cancel, provider: provider, hint: hint}
 }
 
 func (s *openAIChatStream) Recv() (*chat.StreamChunk, error) {
@@ -335,6 +361,10 @@ func (s *openAIChatStream) Recv() (*chat.StreamChunk, error) {
 		if bytes.Equal(line, []byte("[DONE]")) {
 			s.finished = true
 			return nil, io.EOF
+		}
+		if err := decodeStreamAPIError(s.provider, s.hint, line); err != nil {
+			s.finished = true
+			return nil, err
 		}
 		chunk := &chat.StreamChunk{}
 		if err := json.Unmarshal(line, chunk); err != nil {

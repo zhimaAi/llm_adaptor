@@ -2,7 +2,11 @@ package embedding
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
+	"math"
 )
 
 type Input struct {
@@ -62,6 +66,47 @@ type Data struct {
 	Object    string    `json:"object"`
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
+}
+
+func (d *Data) UnmarshalJSON(raw []byte) error {
+	var value struct {
+		Object    string          `json:"object"`
+		Embedding json.RawMessage `json:"embedding"`
+		Index     int             `json:"index"`
+	}
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	d.Object, d.Index = value.Object, value.Index
+	if len(value.Embedding) == 0 || string(value.Embedding) == "null" {
+		return fmt.Errorf("embedding value is empty")
+	}
+	if value.Embedding[0] != '"' {
+		if err := json.Unmarshal(value.Embedding, &d.Embedding); err != nil {
+			return err
+		}
+		if len(d.Embedding) == 0 {
+			return fmt.Errorf("embedding value is empty")
+		}
+		return nil
+	}
+	var encoded string
+	if err := json.Unmarshal(value.Embedding, &encoded); err != nil {
+		return err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("decode base64 embedding: %w", err)
+	}
+	if len(decoded) == 0 || len(decoded)%4 != 0 {
+		return fmt.Errorf("base64 embedding byte length must be a positive multiple of 4")
+	}
+	d.Embedding = make([]float64, len(decoded)/4)
+	for index := range d.Embedding {
+		bits := binary.LittleEndian.Uint32(decoded[index*4 : index*4+4])
+		d.Embedding[index] = float64(math.Float32frombits(bits))
+	}
+	return nil
 }
 
 type Usage struct {

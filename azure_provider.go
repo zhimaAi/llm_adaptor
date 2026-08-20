@@ -63,7 +63,7 @@ func (p *azureProvider) streamChat(ctx context.Context, selected credential, req
 		cancel()
 		return nil, err
 	}
-	return newThinkTagStream(newOpenAIChatStream(response.Body, cancel)), nil
+	return newThinkTagStream(newOpenAIChatStream(response.Body, cancel, ProviderAzure, selected.hint)), nil
 }
 
 func (p *azureProvider) createEmbedding(ctx context.Context, selected credential, request *embedding.CreateRequest) (*embedding.CreateResponse, error) {

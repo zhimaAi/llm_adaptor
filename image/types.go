@@ -5,6 +5,7 @@ import "encoding/json"
 type GenerateRequest struct {
 	Model             string         `json:"model,omitempty"`
 	Prompt            string         `json:"prompt"`
+	Image             []string       `json:"image,omitempty"`
 	N                 *int           `json:"n,omitempty"`
 	Quality           string         `json:"quality,omitempty"`
 	ResponseFormat    string         `json:"response_format,omitempty"`
@@ -26,6 +27,8 @@ type Data struct {
 	URL           string `json:"url,omitempty"`
 	B64JSON       string `json:"b64_json,omitempty"`
 	RevisedPrompt string `json:"revised_prompt,omitempty"`
+	Format        string `json:"-"`
+	MIMEType      string `json:"-"`
 }
 
 type Usage struct {
@@ -51,6 +54,8 @@ type StreamChunk struct {
 	URL         string                     `json:"url,omitempty"`
 	B64JSON     string                     `json:"b64_json,omitempty"`
 	Size        string                     `json:"size,omitempty"`
+	Format      string                     `json:"-"`
+	MIMEType    string                     `json:"-"`
 	Usage       Usage                      `json:"usage,omitempty"`
 	ExtraFields map[string]json.RawMessage `json:"-"`
 	RawResponse json.RawMessage            `json:"-"`

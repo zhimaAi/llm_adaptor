@@ -52,6 +52,7 @@ type CredentialConfig struct {
 type ClientConfig struct {
 	Provider       Provider         `json:"provider"`
 	BaseURL        string           `json:"base_url,omitempty"`
+	ServiceBaseURL string           `json:"service_base_url,omitempty"`
 	Credentials    CredentialConfig `json:"credentials"`
 	APIVersion     string           `json:"api_version,omitempty"`
 	HTTPClient     *http.Client     `json:"-"`
@@ -60,7 +61,8 @@ type ClientConfig struct {
 }
 
 type ProviderInfo struct {
-	ID             Provider     `json:"id"`
-	DefaultBaseURL string       `json:"default_base_url,omitempty"`
-	Capabilities   []Capability `json:"capabilities"`
+	ID                    Provider     `json:"id"`
+	DefaultBaseURL        string       `json:"default_base_url,omitempty"`
+	DefaultServiceBaseURL string       `json:"default_service_base_url,omitempty"`
+	Capabilities          []Capability `json:"capabilities"`
 }

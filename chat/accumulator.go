@@ -28,7 +28,7 @@ func (a *Accumulator) Add(chunk *StreamChunk) error {
 		a.response.ServiceTier = chunk.ServiceTier
 	}
 	if chunk.Usage != nil {
-		a.response.Usage = *chunk.Usage
+		mergeUsage(&a.response.Usage, *chunk.Usage)
 	}
 	for _, chunkChoice := range chunk.Choices {
 		choice := a.choices[chunkChoice.Index]
@@ -48,6 +48,32 @@ func (a *Accumulator) Add(chunk *StreamChunk) error {
 		a.addToolCalls(chunkChoice.Index, chunkChoice.Delta.ToolCalls)
 	}
 	return nil
+}
+
+func mergeUsage(current *Usage, incoming Usage) {
+	if incoming.PromptTokens != 0 {
+		current.PromptTokens = incoming.PromptTokens
+	}
+	if incoming.CompletionTokens != 0 {
+		current.CompletionTokens = incoming.CompletionTokens
+	}
+	if incoming.PromptTokensDetails.CachedTokens != 0 {
+		current.PromptTokensDetails.CachedTokens = incoming.PromptTokensDetails.CachedTokens
+	}
+	if incoming.PromptTokensDetails.ReasoningTokens != 0 {
+		current.PromptTokensDetails.ReasoningTokens = incoming.PromptTokensDetails.ReasoningTokens
+	}
+	if incoming.CompletionTokenDetails.CachedTokens != 0 {
+		current.CompletionTokenDetails.CachedTokens = incoming.CompletionTokenDetails.CachedTokens
+	}
+	if incoming.CompletionTokenDetails.ReasoningTokens != 0 {
+		current.CompletionTokenDetails.ReasoningTokens = incoming.CompletionTokenDetails.ReasoningTokens
+	}
+	if incoming.TotalTokens != 0 {
+		current.TotalTokens = incoming.TotalTokens
+	} else {
+		current.TotalTokens = current.PromptTokens + current.CompletionTokens
+	}
 }
 
 func (a *Accumulator) Response() *CreateResponse {

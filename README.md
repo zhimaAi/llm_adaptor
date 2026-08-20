@@ -20,6 +20,8 @@ client, err := llm.NewClient(llm.ClientConfig{
 })
 ```
 
+所有 Provider 都允许显式传入 `BaseURL`。Gemini、阿里云和 Cohere 同时包含 OpenAI-compatible 与原生能力；需要通过自定义网关覆盖两类接口时，分别传入 `BaseURL` 和 `ServiceBaseURL`，两者都会完整保留自定义子路径。OpenAI Agent、Xinference 使用 `APIVersion` 补齐版本路径，Ollama 兼容传入服务根地址或已经包含 `/v1` 的地址。
+
 APIKey 支持：
 
 ```text

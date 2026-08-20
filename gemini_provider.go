@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strings"
 
 	"github.com/zhimaAi/llm_adaptor/v2/embedding"
 )
+
+const geminiDefaultServiceBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 
 type geminiProvider struct{ *openAICompatibleProvider }
 
 func newGeminiProvider(config ClientConfig) *geminiProvider {
 	return &geminiProvider{newOpenAICompatibleProvider(config, ProviderInfo{
-		ID: ProviderGemini, DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+		ID: ProviderGemini, DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", DefaultServiceBaseURL: geminiDefaultServiceBaseURL,
 		Capabilities: []Capability{CapabilityChat, CapabilityEmbedding},
 	})}
 }
@@ -70,13 +71,7 @@ func (p *geminiProvider) createEmbedding(ctx context.Context, selected credentia
 }
 
 func (p *geminiProvider) geminiEmbeddingURL(model, apiKey string) (string, error) {
-	serviceBase := p.config.BaseURL
-	if value, ok := p.config.Extra["service_base_url"].(string); ok && strings.TrimSpace(value) != "" {
-		serviceBase = strings.TrimRight(strings.TrimSpace(value), "/")
-	} else if index := strings.Index(serviceBase, "/openai"); index >= 0 {
-		serviceBase = serviceBase[:index]
-	}
-	endpoint, err := url.Parse(strings.TrimRight(serviceBase, "/") + "/models/" + url.PathEscape(model) + ":embedContent")
+	endpoint, err := url.Parse(joinURLPath(p.config.ServiceBaseURL, "/models/"+url.PathEscape(model)+":embedContent"))
 	if err != nil {
 		return "", err
 	}

@@ -30,6 +30,27 @@ type credentialPool struct {
 	randomInt   randomIntFunc
 }
 
+// CredentialEntry is a normalized API key and its arbitrary-precision weight.
+type CredentialEntry struct {
+	APIKey string `json:"api_key"`
+	Weight string `json:"weight"`
+}
+
+// ParseCredentialConfig applies the same normalization used by NewClient.
+func ParseCredentialConfig(config CredentialConfig) ([]CredentialEntry, error) {
+	pool, err := newCredentialPoolWithRandom(config, func(max *big.Int) (*big.Int, error) {
+		return new(big.Int), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]CredentialEntry, 0, len(pool.items))
+	for _, item := range pool.items {
+		entries = append(entries, CredentialEntry{APIKey: item.apiKey, Weight: item.weight.String()})
+	}
+	return entries, nil
+}
+
 func newAnonymousCredentialPool() *credentialPool {
 	return &credentialPool{
 		items:       []credential{{weight: big.NewInt(DefaultAPIKeyWeight)}},

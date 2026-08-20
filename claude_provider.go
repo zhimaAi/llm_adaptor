@@ -104,7 +104,7 @@ func (p *claudeProvider) streamChat(ctx context.Context, selected credential, re
 		cancel()
 		return nil, err
 	}
-	return newClaudeStream(response.Body, cancel), nil
+	return newClaudeStream(response.Body, cancel, selected.hint), nil
 }
 
 func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]any, error) {
@@ -182,12 +182,13 @@ type claudeStream struct {
 	id          string
 	toolIndexes map[int]int
 	cancel      context.CancelFunc
+	hint        string
 }
 
-func newClaudeStream(body io.ReadCloser, cancel context.CancelFunc) *claudeStream {
+func newClaudeStream(body io.ReadCloser, cancel context.CancelFunc, hint string) *claudeStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
-	return &claudeStream{body: body, scanner: scanner, toolIndexes: make(map[int]int), cancel: cancel}
+	return &claudeStream{body: body, scanner: scanner, toolIndexes: make(map[int]int), cancel: cancel, hint: hint}
 }
 
 func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
@@ -200,6 +201,10 @@ func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
 			continue
 		}
 		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		if err := decodeStreamAPIError(ProviderClaude, s.hint, line); err != nil {
+			s.finished = true
+			return nil, err
+		}
 		var event struct {
 			Type         string         `json:"type"`
 			Index        int            `json:"index"`

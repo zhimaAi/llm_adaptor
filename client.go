@@ -71,11 +71,24 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedProvider, config.Provider)
 	}
 	config.BaseURL = strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")
+	config.ServiceBaseURL = strings.TrimRight(strings.TrimSpace(config.ServiceBaseURL), "/")
 	if config.BaseURL == "" {
 		config.BaseURL = definition.defaultBaseURL
 	}
 	if config.BaseURL == "" {
 		return nil, fmt.Errorf("%w: base_url is required for provider %s", ErrInvalidRequest, config.Provider)
+	}
+	if config.ServiceBaseURL == "" {
+		config.ServiceBaseURL = definition.defaultServiceBaseURL
+	}
+	switch config.Provider {
+	case ProviderOpenAIAgent, ProviderXinference:
+		if strings.TrimSpace(config.APIVersion) == "" {
+			return nil, fmt.Errorf("%w: api_version is required for provider %s", ErrInvalidRequest, config.Provider)
+		}
+		config.BaseURL = appendURLSegment(config.BaseURL, config.APIVersion)
+	case ProviderOllama:
+		config.BaseURL = appendURLSegment(config.BaseURL, "v1")
 	}
 	if config.HTTPClient == nil {
 		config.HTTPClient = http.DefaultClient
@@ -250,24 +263,27 @@ func (s SpeechService) Stream(ctx context.Context, req *speech.StreamRequest) (s
 }
 
 type providerDefinition struct {
-	defaultBaseURL      string
-	credentialsOptional bool
-	newProvider         func(ClientConfig) providerImplementation
+	defaultBaseURL        string
+	defaultServiceBaseURL string
+	credentialsOptional   bool
+	newProvider           func(ClientConfig) providerImplementation
 }
 
 var providerDefinitions = map[Provider]providerDefinition{
 	Provider302AI: new302AIProviderDefinition(),
 	ProviderAli: {
-		defaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-		newProvider:    func(config ClientConfig) providerImplementation { return newAliProvider(config) },
+		defaultBaseURL:        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		defaultServiceBaseURL: aliDefaultServiceBaseURL,
+		newProvider:           func(config ClientConfig) providerImplementation { return newAliProvider(config) },
 	},
 	ProviderBaichuan: newGenericProviderDefinition("https://api.baichuan-ai.com/v1", ProviderBaichuan, false, CapabilityChat, CapabilityEmbedding),
 	ProviderBaidu:    newGenericProviderDefinition("https://qianfan.baidubce.com/v2", ProviderBaidu, false, CapabilityChat, CapabilityEmbedding),
 	ProviderDeepSeek: newGenericProviderDefinition("https://api.deepseek.com", ProviderDeepSeek, false, CapabilityChat),
 	ProviderDoubao:   newGenericProviderDefinition("https://ark.cn-beijing.volces.com/api/v3", ProviderDoubao, false, CapabilityChat, CapabilityEmbedding, CapabilityImage),
 	ProviderGemini: {
-		defaultBaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-		newProvider:    func(config ClientConfig) providerImplementation { return newGeminiProvider(config) },
+		defaultBaseURL:        "https://generativelanguage.googleapis.com/v1beta/openai",
+		defaultServiceBaseURL: geminiDefaultServiceBaseURL,
+		newProvider:           func(config ClientConfig) providerImplementation { return newGeminiProvider(config) },
 	},
 	ProviderHunyuan:        newGenericProviderDefinition("https://api.hunyuan.cloud.tencent.com/v1", ProviderHunyuan, false, CapabilityChat, CapabilityEmbedding),
 	ProviderLingYiWanWu:    newGenericProviderDefinition("https://api.lingyiwanwu.com/v1", ProviderLingYiWanWu, false, CapabilityChat),
@@ -292,7 +308,7 @@ var providerDefinitions = map[Provider]providerDefinition{
 		newProvider:    func(config ClientConfig) providerImplementation { return &claudeProvider{config: config} },
 	},
 	ProviderBAAI:   newBAAIProviderDefinition(),
-	ProviderCohere: newRerankProviderDefinition("https://api.cohere.ai/compatibility/v1", ProviderCohere, false, "https://api.cohere.com/v2/rerank", "documents", "top_n", CapabilityChat, CapabilityEmbedding, CapabilityRerank),
+	ProviderCohere: newCohereProviderDefinition(),
 	ProviderJina:   newRerankProviderDefinition("https://api.jina.ai/v1", ProviderJina, false, "/rerank", "documents", "top_n", CapabilityEmbedding, CapabilityRerank),
 	ProviderVoyage: newGenericProviderDefinition("https://api.voyageai.com/v1", ProviderVoyage, false, CapabilityEmbedding),
 	ProviderMiniMax: {
@@ -323,6 +339,28 @@ func newRerankProviderDefinition(baseURL string, id Provider, credentialsOptiona
 		return provider
 	}
 	return definition
+}
+
+func newCohereProviderDefinition() providerDefinition {
+	const (
+		baseURL        = "https://api.cohere.ai/compatibility/v1"
+		serviceBaseURL = "https://api.cohere.com"
+	)
+	return providerDefinition{
+		defaultBaseURL:        baseURL,
+		defaultServiceBaseURL: serviceBaseURL,
+		newProvider: func(config ClientConfig) providerImplementation {
+			provider := newOpenAICompatibleProvider(config, ProviderInfo{
+				ID: ProviderCohere, DefaultBaseURL: baseURL, DefaultServiceBaseURL: serviceBaseURL,
+				Capabilities: []Capability{CapabilityChat, CapabilityEmbedding, CapabilityRerank},
+			})
+			provider.rerankPath = "/v2/rerank"
+			provider.rerankBaseURL = config.ServiceBaseURL
+			provider.rerankDocumentsKey = "documents"
+			provider.rerankTopKey = "top_n"
+			return provider
+		},
+	}
 }
 
 func newBAAIProviderDefinition() providerDefinition {
