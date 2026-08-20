@@ -136,6 +136,91 @@ type StreamChunk struct {
 	Meta         ResponseMeta               `json:"-"`
 }
 
+type VoiceType string
+
+const (
+	VoiceTypeSystem     VoiceType = "system"
+	VoiceTypeCloning    VoiceType = "voice_cloning"
+	VoiceTypeGeneration VoiceType = "voice_generation"
+	VoiceTypeAll        VoiceType = "all"
+)
+
+type Voice map[string]any
+
+type ListVoicesRequest struct {
+	VoiceType VoiceType `json:"voice_type"`
+}
+
+type ListVoicesResponse struct {
+	SystemVoices    []Voice                    `json:"system_voice,omitempty"`
+	ClonedVoices    []Voice                    `json:"voice_cloning,omitempty"`
+	GeneratedVoices []Voice                    `json:"voice_generation,omitempty"`
+	BaseResponse    BaseResponse               `json:"base_resp"`
+	ExtraFields     map[string]json.RawMessage `json:"-"`
+	RawResponse     json.RawMessage            `json:"-"`
+	Meta            ResponseMeta               `json:"-"`
+}
+
+type UploadVoiceFileRequest struct {
+	Purpose  string `json:"purpose"`
+	FilePath string `json:"file_path"`
+}
+
+type UploadedFile struct {
+	FileID    int64  `json:"file_id"`
+	Bytes     int64  `json:"bytes,omitempty"`
+	CreatedAt int64  `json:"created_at,omitempty"`
+	Filename  string `json:"filename,omitempty"`
+	Purpose   string `json:"purpose,omitempty"`
+}
+
+type UploadVoiceFileResponse struct {
+	File         UploadedFile               `json:"file"`
+	BaseResponse BaseResponse               `json:"base_resp"`
+	ExtraFields  map[string]json.RawMessage `json:"-"`
+	RawResponse  json.RawMessage            `json:"-"`
+	Meta         ResponseMeta               `json:"-"`
+}
+
+type ClonePrompt struct {
+	PromptAudio int64  `json:"prompt_audio"`
+	PromptText  string `json:"prompt_text"`
+}
+
+type CloneVoiceRequest struct {
+	FileID                  int64          `json:"file_id"`
+	VoiceID                 string         `json:"voice_id"`
+	ClonePrompt             *ClonePrompt   `json:"clone_prompt,omitempty"`
+	Text                    string         `json:"text,omitempty"`
+	Model                   string         `json:"model,omitempty"`
+	LanguageBoost           string         `json:"language_boost,omitempty"`
+	NeedNoiseReduction      *bool          `json:"need_noise_reduction,omitempty"`
+	NeedVolumeNormalization *bool          `json:"need_volume_normalization,omitempty"`
+	ExtraBody               map[string]any `json:"-"`
+}
+
+type CloneVoiceResponse struct {
+	InputSensitive     any                        `json:"input_sensitive,omitempty"`
+	InputSensitiveType int                        `json:"input_sensitive_type,omitempty"`
+	DemoAudio          string                     `json:"demo_audio,omitempty"`
+	BaseResponse       BaseResponse               `json:"base_resp"`
+	ExtraFields        map[string]json.RawMessage `json:"-"`
+	RawResponse        json.RawMessage            `json:"-"`
+	Meta               ResponseMeta               `json:"-"`
+}
+
+type CloneVoiceFromFilesRequest struct {
+	SourceFilePath string            `json:"source_file_path"`
+	PromptFilePath string            `json:"prompt_file_path,omitempty"`
+	CloneRequest   CloneVoiceRequest `json:"clone_request"`
+}
+
+type CloneVoiceFromFilesResponse struct {
+	SourceUpload *UploadVoiceFileResponse `json:"source_upload"`
+	PromptUpload *UploadVoiceFileResponse `json:"prompt_upload,omitempty"`
+	Clone        *CloneVoiceResponse      `json:"clone"`
+}
+
 type Stream interface {
 	Recv() (*StreamChunk, error)
 	Close() error

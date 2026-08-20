@@ -25,12 +25,19 @@ type StreamRequest struct {
 	GenerateRequest
 }
 
+type DataError struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
 type Data struct {
-	URL           string `json:"url,omitempty"`
-	B64JSON       string `json:"b64_json,omitempty"`
-	RevisedPrompt string `json:"revised_prompt,omitempty"`
-	Format        string `json:"-"`
-	MIMEType      string `json:"-"`
+	URL           string    `json:"url,omitempty"`
+	B64JSON       string    `json:"b64_json,omitempty"`
+	RevisedPrompt string    `json:"revised_prompt,omitempty"`
+	Size          string    `json:"size,omitempty"`
+	Error         DataError `json:"error,omitempty"`
+	Format        string    `json:"-"`
+	MIMEType      string    `json:"-"`
 }
 
 type Usage struct {
@@ -56,6 +63,7 @@ type StreamChunk struct {
 	URL         string                     `json:"url,omitempty"`
 	B64JSON     string                     `json:"b64_json,omitempty"`
 	Size        string                     `json:"size,omitempty"`
+	Error       DataError                  `json:"error,omitempty"`
 	Format      string                     `json:"-"`
 	MIMEType    string                     `json:"-"`
 	Usage       Usage                      `json:"usage,omitempty"`

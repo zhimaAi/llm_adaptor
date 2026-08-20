@@ -32,6 +32,14 @@ key1@10,key2@20,key3@30
 
 每个请求按权重独立随机选择一个 Key；流式请求在整个生命周期中固定使用同一个 Key。空 Key 会跳过，重复 Key 的权重会累加，非法或小于等于零的权重按 1 处理。
 
+不通过 `Client` 发起、但仍需复用相同 Key 池规则的代理请求，可以调用 `SelectAPIKey`：
+
+```go
+selected, err := llm.SelectAPIKey(llm.SelectAPIKeyRequest{
+    Credentials: llm.CredentialConfig{APIKeys: "key1@20,key2@80"},
+})
+```
+
 ## Chat
 
 ```go
@@ -65,7 +73,7 @@ resp, err := client.Speech.Create(ctx, &speech.CreateRequest{
 })
 ```
 
-`client.Speech.Stream` 使用 MiniMax HTTP T2A 流式协议。v2 不提供语音转写、语音翻译、WebSocket T2A、异步长文本或音色克隆。
+`client.Speech.Stream` 使用 MiniMax HTTP T2A 流式协议。MiniMax 音色管理通过 `client.Speech.ListVoices`、`UploadVoiceFile` 和 `CloneVoice` 调用，并与 T2A 一样按请求从 APIKey 池中随机选择 Key。完整的上传并克隆流程应使用 `CloneVoiceFromFiles`，它会固定同一个 Key，避免账号级 `file_id` 在后续克隆请求中失效。v2 不提供语音转写、语音翻译、WebSocket T2A 或异步长文本。
 
 ## 能力说明
 

@@ -109,3 +109,13 @@ func TestCredentialPoolPropagatesRandomFailure(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestSelectAPIKeyReturnsPublicSelection(t *testing.T) {
+	response, err := SelectAPIKey(SelectAPIKeyRequest{Credentials: CredentialConfig{APIKeys: "only-key@10"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.APIKey != "only-key" || response.CredentialHint != credentialHint("only-key") {
+		t.Fatalf("unexpected selection: %#v", response)
+	}
+}

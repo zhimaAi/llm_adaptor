@@ -16,6 +16,15 @@ const (
 	DefaultAPIKeyWeight   = 1
 )
 
+type SelectAPIKeyRequest struct {
+	Credentials CredentialConfig `json:"credentials"`
+}
+
+type SelectAPIKeyResponse struct {
+	APIKey         string `json:"api_key"`
+	CredentialHint string `json:"credential_hint"`
+}
+
 type randomIntFunc func(max *big.Int) (*big.Int, error)
 
 type credential struct {
@@ -44,6 +53,20 @@ func newCredentialPool(config CredentialConfig) (*credentialPool, error) {
 	return newCredentialPoolWithRandom(config, func(max *big.Int) (*big.Int, error) {
 		return rand.Int(rand.Reader, max)
 	})
+}
+
+// SelectAPIKey parses an APIKey pool and selects one key with the same weighted
+// random strategy used by Client requests.
+func SelectAPIKey(request SelectAPIKeyRequest) (SelectAPIKeyResponse, error) {
+	pool, err := newCredentialPool(request.Credentials)
+	if err != nil {
+		return SelectAPIKeyResponse{}, err
+	}
+	selected, err := pool.selectCredential()
+	if err != nil {
+		return SelectAPIKeyResponse{}, err
+	}
+	return SelectAPIKeyResponse{APIKey: selected.apiKey, CredentialHint: selected.hint}, nil
 }
 
 func newCredentialPoolWithRandom(config CredentialConfig, randomInt randomIntFunc) (*credentialPool, error) {

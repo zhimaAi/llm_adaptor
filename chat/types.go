@@ -46,7 +46,6 @@ type ContentPart struct {
 	ImageURL   *ImageURL       `json:"image_url,omitempty"`
 	InputAudio *InputAudio     `json:"input_audio,omitempty"`
 	VideoURL   *VideoURL       `json:"video_url,omitempty"`
-	Extra      map[string]any  `json:"-"`
 }
 
 type MessageContent struct {
@@ -111,7 +110,6 @@ type Message struct {
 	ReasoningContent string          `json:"reasoning_content,omitempty"`
 	Refusal          string          `json:"refusal,omitempty"`
 	Images           []ResponseImage `json:"images,omitempty"`
-	Extra            map[string]any  `json:"-"`
 }
 
 type ResponseImage struct {

@@ -22,6 +22,7 @@ import (
 const (
 	streamInitialBuffer = 64 * 1024
 	streamMaximumBuffer = 16 * 1024 * 1024
+	imagePartialFailed  = "image_generation.partial_failed"
 )
 
 type openAICompatibleProvider struct {
@@ -306,9 +307,11 @@ func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
 			s.finished = true
 			return nil, io.EOF
 		}
-		if err := decodeStreamAPIError(s.provider, s.hint, line); err != nil {
-			s.finished = true
-			return nil, err
+		if !isImagePartialFailure(line) {
+			if err := decodeStreamAPIError(s.provider, s.hint, line); err != nil {
+				s.finished = true
+				return nil, err
+			}
 		}
 		chunk := &image.StreamChunk{}
 		if err := json.Unmarshal(line, chunk); err != nil {
@@ -322,7 +325,7 @@ func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
 			chunk.URL, chunk.B64JSON, chunk.Format, chunk.MIMEType = data.URL, data.B64JSON, data.Format, data.MIMEType
 		}
 		chunk.RawResponse = append(chunk.RawResponse[:0], line...)
-		chunk.ExtraFields = extractExtraFields(line, "type", "model", "created", "image_index", "url", "b64_json", "size", "usage")
+		chunk.ExtraFields = extractExtraFields(line, "type", "model", "created", "image_index", "url", "b64_json", "size", "error", "usage")
 		return chunk, nil
 	}
 	if err := s.scanner.Err(); err != nil {
@@ -330,6 +333,13 @@ func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
 	}
 	s.finished = true
 	return nil, io.EOF
+}
+
+func isImagePartialFailure(raw []byte) bool {
+	var event struct {
+		Type string `json:"type"`
+	}
+	return json.Unmarshal(raw, &event) == nil && event.Type == imagePartialFailed
 }
 
 func (s *openAIImageStream) Close() error {

@@ -32,6 +32,9 @@ func normalizeImageResponse(ctx context.Context, config ClientConfig, provider P
 }
 
 func normalizeImageData(ctx context.Context, config ClientConfig, provider Provider, hint string, request *image.GenerateRequest, data *image.Data) error {
+	if data.Error.Code != "" || data.Error.Message != "" {
+		return nil
+	}
 	if strings.HasPrefix(data.URL, "data:") {
 		mimeType, encoded, err := parseImageDataURL(data.URL)
 		if err != nil {

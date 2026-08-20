@@ -22,6 +22,14 @@ const (
 	claudeVersionHeader     = "anthropic-version"
 	claudeDefaultAPIVersion = "2023-06-01"
 	claudeDefaultMaxTokens  = 4096
+	claudeRoleUser          = "user"
+	claudeRoleAssistant     = "assistant"
+	claudeContentText       = "text"
+	claudeContentImage      = "image"
+	claudeContentToolUse    = "tool_use"
+	claudeContentToolResult = "tool_result"
+	claudeSourceBase64      = "base64"
+	claudeSourceURL         = "url"
 )
 
 type claudeProvider struct{ config ClientConfig }
@@ -37,6 +45,29 @@ type claudeContent struct {
 	ID       string          `json:"id,omitempty"`
 	Name     string          `json:"name,omitempty"`
 	Input    json.RawMessage `json:"input,omitempty"`
+}
+
+type claudeRequestMessage struct {
+	Role    string                 `json:"role"`
+	Content []claudeRequestContent `json:"content"`
+}
+
+type claudeRequestContent struct {
+	Type      string             `json:"type"`
+	Text      string             `json:"text,omitempty"`
+	ID        string             `json:"id,omitempty"`
+	Name      string             `json:"name,omitempty"`
+	Input     any                `json:"input,omitempty"`
+	ToolUseID string             `json:"tool_use_id,omitempty"`
+	Content   string             `json:"content,omitempty"`
+	Source    *claudeImageSource `json:"source,omitempty"`
+}
+
+type claudeImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	URL       string `json:"url,omitempty"`
 }
 
 type claudeResponse struct {
@@ -113,7 +144,7 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 	if request == nil || request.Model == "" || len(request.Messages) == 0 {
 		return nil, fmt.Errorf("%w: model and messages are required", ErrInvalidRequest)
 	}
-	messages := make([]chat.Message, 0, len(request.Messages))
+	messages := make([]claudeRequestMessage, 0, len(request.Messages))
 	var system strings.Builder
 	for _, message := range request.Messages {
 		if message.Role == chat.RoleSystem || message.Role == chat.RoleDeveloper {
@@ -122,7 +153,11 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 			}
 			continue
 		}
-		messages = append(messages, message)
+		converted, err := convertClaudeMessage(message)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, converted)
 	}
 	maxTokens := claudeDefaultMaxTokens
 	if request.MaxCompletionTokens != nil {
@@ -151,6 +186,81 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 		body[key] = value
 	}
 	return body, nil
+}
+
+func convertClaudeMessage(message chat.Message) (claudeRequestMessage, error) {
+	converted := claudeRequestMessage{Role: string(message.Role)}
+	if message.Role == chat.RoleTool {
+		if strings.TrimSpace(message.ToolCallID) == "" {
+			return claudeRequestMessage{}, fmt.Errorf("%w: Claude tool result requires tool_call_id", ErrInvalidRequest)
+		}
+		converted.Role = claudeRoleUser
+		content := ""
+		if message.Content.Text != nil {
+			content = *message.Content.Text
+		}
+		converted.Content = []claudeRequestContent{{Type: claudeContentToolResult, ToolUseID: message.ToolCallID, Content: content}}
+		return converted, nil
+	}
+	if converted.Role != claudeRoleUser && converted.Role != claudeRoleAssistant {
+		return claudeRequestMessage{}, fmt.Errorf("%w: Claude does not support message role %q", ErrInvalidRequest, message.Role)
+	}
+	if message.Content.Text != nil && (*message.Content.Text != "" || len(message.ToolCalls) == 0) {
+		converted.Content = append(converted.Content, claudeRequestContent{Type: claudeContentText, Text: *message.Content.Text})
+	} else {
+		for _, part := range message.Content.Parts {
+			switch part.Type {
+			case chat.ContentPartText:
+				converted.Content = append(converted.Content, claudeRequestContent{Type: claudeContentText, Text: part.Text})
+			case chat.ContentPartImageURL:
+				if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
+					return claudeRequestMessage{}, fmt.Errorf("%w: Claude image_url content is empty", ErrInvalidRequest)
+				}
+				source, err := claudeImageSourceFromURL(part.ImageURL.URL)
+				if err != nil {
+					return claudeRequestMessage{}, err
+				}
+				converted.Content = append(converted.Content, claudeRequestContent{Type: claudeContentImage, Source: source})
+			default:
+				return claudeRequestMessage{}, fmt.Errorf("%w: Claude does not support content part %q", ErrInvalidRequest, part.Type)
+			}
+		}
+	}
+	for _, call := range message.ToolCalls {
+		if converted.Role != claudeRoleAssistant {
+			return claudeRequestMessage{}, fmt.Errorf("%w: Claude tool_use must be in an assistant message", ErrInvalidRequest)
+		}
+		if strings.TrimSpace(call.ID) == "" || strings.TrimSpace(call.Function.Name) == "" {
+			return claudeRequestMessage{}, fmt.Errorf("%w: Claude tool_use requires id and function name", ErrInvalidRequest)
+		}
+		input := make(map[string]any)
+		if strings.TrimSpace(call.Function.Arguments) != "" {
+			if err := json.Unmarshal([]byte(call.Function.Arguments), &input); err != nil {
+				return claudeRequestMessage{}, fmt.Errorf("%w: invalid Claude tool arguments: %v", ErrInvalidRequest, err)
+			}
+			if input == nil {
+				input = make(map[string]any)
+			}
+		}
+		converted.Content = append(converted.Content, claudeRequestContent{
+			Type: claudeContentToolUse, ID: call.ID, Name: call.Function.Name, Input: input,
+		})
+	}
+	if len(converted.Content) == 0 {
+		converted.Content = []claudeRequestContent{{Type: claudeContentText}}
+	}
+	return converted, nil
+}
+
+func claudeImageSourceFromURL(value string) (*claudeImageSource, error) {
+	if strings.HasPrefix(value, "data:") {
+		mediaType, data, err := parseImageDataURL(value)
+		if err != nil {
+			return nil, err
+		}
+		return &claudeImageSource{Type: claudeSourceBase64, MediaType: mediaType, Data: data}, nil
+	}
+	return &claudeImageSource{Type: claudeSourceURL, URL: value}, nil
 }
 
 func (p *claudeProvider) do(ctx context.Context, selected credential, body any) (*http.Response, error) {

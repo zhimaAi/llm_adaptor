@@ -44,6 +44,12 @@ type speechProvider interface {
 	streamSpeech(context.Context, credential, *speech.StreamRequest) (speech.Stream, error)
 }
 
+type speechVoiceProvider interface {
+	listVoices(context.Context, credential, *speech.ListVoicesRequest) (*speech.ListVoicesResponse, error)
+	uploadVoiceFile(context.Context, credential, *speech.UploadVoiceFileRequest) (*speech.UploadVoiceFileResponse, error)
+	cloneVoice(context.Context, credential, *speech.CloneVoiceRequest) (*speech.CloneVoiceResponse, error)
+}
+
 type chatProvider interface {
 	createChat(context.Context, credential, *chat.CreateRequest) (*chat.CreateResponse, error)
 	streamChat(context.Context, credential, *chat.StreamRequest) (chat.Stream, error)
@@ -260,6 +266,103 @@ func (s SpeechService) Stream(ctx context.Context, req *speech.StreamRequest) (s
 		return nil, err
 	}
 	return provider.streamSpeech(ctx, credential, req)
+}
+
+func (s SpeechService) ListVoices(ctx context.Context, req *speech.ListVoicesRequest) (*speech.ListVoicesResponse, error) {
+	if !s.client.supports(CapabilitySpeech) {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	provider, ok := s.client.provider.(speechVoiceProvider)
+	if !ok {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	selected, err := s.client.credentials.selectCredential()
+	if err != nil {
+		return nil, err
+	}
+	return provider.listVoices(ctx, selected, req)
+}
+
+func (s SpeechService) UploadVoiceFile(ctx context.Context, req *speech.UploadVoiceFileRequest) (*speech.UploadVoiceFileResponse, error) {
+	if !s.client.supports(CapabilitySpeech) {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	provider, ok := s.client.provider.(speechVoiceProvider)
+	if !ok {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	selected, err := s.client.credentials.selectCredential()
+	if err != nil {
+		return nil, err
+	}
+	return provider.uploadVoiceFile(ctx, selected, req)
+}
+
+func (s SpeechService) CloneVoice(ctx context.Context, req *speech.CloneVoiceRequest) (*speech.CloneVoiceResponse, error) {
+	if !s.client.supports(CapabilitySpeech) {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	provider, ok := s.client.provider.(speechVoiceProvider)
+	if !ok {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	selected, err := s.client.credentials.selectCredential()
+	if err != nil {
+		return nil, err
+	}
+	return provider.cloneVoice(ctx, selected, req)
+}
+
+// CloneVoiceFromFiles uploads the source and optional prompt audio, then clones
+// the voice with one pinned credential so account-scoped file IDs stay valid.
+func (s SpeechService) CloneVoiceFromFiles(ctx context.Context, req *speech.CloneVoiceFromFilesRequest) (*speech.CloneVoiceFromFilesResponse, error) {
+	if !s.client.supports(CapabilitySpeech) {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	provider, ok := s.client.provider.(speechVoiceProvider)
+	if !ok {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
+	}
+	if req == nil || strings.TrimSpace(req.SourceFilePath) == "" {
+		return nil, fmt.Errorf("%w: MiniMax source_file_path is required", ErrInvalidRequest)
+	}
+	if strings.TrimSpace(req.CloneRequest.VoiceID) == "" {
+		return nil, fmt.Errorf("%w: MiniMax voice_id is required", ErrInvalidRequest)
+	}
+	if strings.TrimSpace(req.PromptFilePath) != "" && (req.CloneRequest.ClonePrompt == nil || strings.TrimSpace(req.CloneRequest.ClonePrompt.PromptText) == "") {
+		return nil, fmt.Errorf("%w: MiniMax clone_prompt is required with prompt_file_path", ErrInvalidRequest)
+	}
+	selected, err := s.client.credentials.selectCredential()
+	if err != nil {
+		return nil, err
+	}
+	result := &speech.CloneVoiceFromFilesResponse{}
+	result.SourceUpload, err = provider.uploadVoiceFile(ctx, selected, &speech.UploadVoiceFileRequest{
+		Purpose: miniMaxVoiceClonePurpose, FilePath: req.SourceFilePath,
+	})
+	if err != nil {
+		return nil, err
+	}
+	cloneRequest := req.CloneRequest
+	if cloneRequest.ClonePrompt != nil {
+		clonePrompt := *cloneRequest.ClonePrompt
+		cloneRequest.ClonePrompt = &clonePrompt
+	}
+	cloneRequest.FileID = result.SourceUpload.File.FileID
+	if strings.TrimSpace(req.PromptFilePath) != "" {
+		result.PromptUpload, err = provider.uploadVoiceFile(ctx, selected, &speech.UploadVoiceFileRequest{
+			Purpose: miniMaxPromptAudioPurpose, FilePath: req.PromptFilePath,
+		})
+		if err != nil {
+			return nil, err
+		}
+		cloneRequest.ClonePrompt.PromptAudio = result.PromptUpload.File.FileID
+	}
+	result.Clone, err = provider.cloneVoice(ctx, selected, &cloneRequest)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 type providerDefinition struct {

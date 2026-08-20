@@ -55,7 +55,7 @@ func TestImageRequestUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
 			if !ok || len(images) != 1 || images[0] != "https://input.example/a.png" {
 				t.Fatalf("typed image input missing: %#v", body)
 			}
-			_, _ = io.WriteString(writer, `{"data":[{"url":"`+server.URL+`/generated"}]}`)
+			_, _ = io.WriteString(writer, `{"data":[{"url":"`+server.URL+`/generated","size":"1024x1024","error":{"code":"","message":""}}]}`)
 		case "/generated":
 			writer.Header().Set("Content-Type", "image/png")
 			_, _ = writer.Write(png)
@@ -72,7 +72,7 @@ func TestImageRequestUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(response.Data) != 1 || response.Data[0].B64JSON != base64.StdEncoding.EncodeToString(png) || response.Data[0].Format != "png" || response.Data[0].URL != "" {
+	if len(response.Data) != 1 || response.Data[0].B64JSON != base64.StdEncoding.EncodeToString(png) || response.Data[0].Format != "png" || response.Data[0].URL != "" || response.Data[0].Size != "1024x1024" {
 		t.Fatalf("unexpected image response: %#v", response)
 	}
 }
@@ -100,5 +100,47 @@ func TestOpenRouterImageStreamConvertsDeltaImages(t *testing.T) {
 	}
 	if chunk.B64JSON != encoded || chunk.Format != "png" || chunk.URL != "" {
 		t.Fatalf("unexpected image chunk: %#v", chunk)
+	}
+}
+
+func TestImageResponsePreservesPerItemError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = io.WriteString(writer, `{"data":[{"error":{"code":"content_policy","message":"blocked"}}]}`)
+	}))
+	defer server.Close()
+	client, err := NewClient(ClientConfig{Provider: ProviderOpenCompatible, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Images.Generate(context.Background(), &image.GenerateRequest{Model: "model", Prompt: "draw", ResponseFormat: "b64_json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Data) != 1 || response.Data[0].Error.Code != "content_policy" || response.Data[0].Error.Message != "blocked" {
+		t.Fatalf("unexpected image error item: %#v", response.Data)
+	}
+}
+
+func TestImageStreamPreservesPartialFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, `data: {"type":"image_generation.partial_failed","error":{"code":"render_failed","message":"try again"}}`+"\n\n")
+	}))
+	defer server.Close()
+	client, err := NewClient(ClientConfig{Provider: ProviderOpenCompatible, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := client.Images.Stream(context.Background(), &image.StreamRequest{GenerateRequest: image.GenerateRequest{Model: "model", Prompt: "draw"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	chunk, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chunk.Error.Code != "render_failed" || chunk.Error.Message != "try again" {
+		t.Fatalf("unexpected partial failure: %#v", chunk)
 	}
 }
