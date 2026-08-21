@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DefaultBaseURLMiniMax = "https://api.minimax.io/v1"
+	DefaultBaseURLMiniMax = "https://api.minimaxi.com/v1"
 	MiniMaxSpeechPath     = "/t2a_v2"
 	ChatCompletionsPath   = "/chat/completions"
 	EmbeddingsPath        = "/embeddings"

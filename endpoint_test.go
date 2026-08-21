@@ -15,6 +15,8 @@ func TestProviderEndpointNormalization(t *testing.T) {
 		{name: "xinference keeps existing version", config: ClientConfig{Provider: ProviderXinference, BaseURL: "https://gateway.example/custom/v1/", APIVersion: "v1", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://gateway.example/custom/v1"},
 		{name: "ollama appends openai version", config: ClientConfig{Provider: ProviderOllama, BaseURL: "https://ollama.example/custom", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://ollama.example/custom/v1"},
 		{name: "ali preserves explicit service path", config: ClientConfig{Provider: ProviderAli, BaseURL: "https://gateway.example/openai/v1", ServiceBaseURL: "https://gateway.example/native/custom", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://gateway.example/openai/v1", wantService: "https://gateway.example/native/custom"},
+		{name: "minimax uses China default", config: ClientConfig{Provider: ProviderMiniMax, Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://api.minimaxi.com/v1"},
+		{name: "minimax preserves overseas override", config: ClientConfig{Provider: ProviderMiniMax, BaseURL: "https://api.minimax.io/v1", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://api.minimax.io/v1"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

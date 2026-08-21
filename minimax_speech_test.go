@@ -3,6 +3,7 @@
 package llm
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,8 +17,117 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zhimaAi/llm_adaptor/v2/chat"
 	"github.com/zhimaAi/llm_adaptor/v2/speech"
 )
+
+type miniMaxRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f miniMaxRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+type contextReadCloser struct {
+	ctx context.Context
+}
+
+func (r *contextReadCloser) Read(_ []byte) (int, error) {
+	<-r.ctx.Done()
+	return 0, r.ctx.Err()
+}
+
+func (r *contextReadCloser) Close() error { return nil }
+
+type errorReadCloser struct {
+	err error
+}
+
+func (r *errorReadCloser) Read(_ []byte) (int, error) { return 0, r.err }
+
+func (r *errorReadCloser) Close() error { return nil }
+
+func TestMiniMaxDefaultAndOverseasEndpoints(t *testing.T) {
+	var endpoints []string
+	responses := map[string]string{
+		"/v1/chat/completions": `{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		"/v1/t2a_v2":           `{"data":{"audio":"abcd","status":2},"base_resp":{"status_code":0,"status_msg":"success"}}`,
+		"/v1/get_voice":        `{"system_voice":[],"base_resp":{"status_code":0,"status_msg":"success"}}`,
+		"/v1/files/upload":     `{"file":{"file_id":123},"base_resp":{"status_code":0,"status_msg":"success"}}`,
+		"/v1/voice_clone":      `{"demo_audio":"https://example.com/demo.mp3","base_resp":{"status_code":0,"status_msg":"success"}}`,
+	}
+	httpClient := &http.Client{Transport: miniMaxRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		endpoints = append(endpoints, request.URL.String())
+		body, ok := responses[request.URL.Path]
+		if !ok {
+			t.Fatalf("unexpected MiniMax endpoint: %s", request.URL.String())
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    request,
+		}, nil
+	})}
+	client, err := NewClient(ClientConfig{
+		Provider:    ProviderMiniMax,
+		Credentials: CredentialConfig{APIKeys: "test-key"},
+		HTTPClient:  httpClient,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err = client.Chat.Create(ctx, &chat.CreateRequest{
+		Model: "MiniMax-M2.7",
+		Messages: []chat.Message{{
+			Role:    chat.RoleUser,
+			Content: chat.TextContent("test"),
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.Speech.Create(ctx, &speech.CreateRequest{Model: "speech-2.8-hd", Text: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.Speech.ListVoices(ctx, &speech.ListVoicesRequest{VoiceType: speech.VoiceTypeAll}); err != nil {
+		t.Fatal(err)
+	}
+	voicePath := filepath.Join(t.TempDir(), "voice.mp3")
+	if err = os.WriteFile(voicePath, []byte("audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.Speech.UploadVoiceFile(ctx, &speech.UploadVoiceFileRequest{Purpose: miniMaxVoiceClonePurpose, FilePath: voicePath}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.Speech.CloneVoice(ctx, &speech.CloneVoiceRequest{FileID: 123, VoiceID: "test-voice"}); err != nil {
+		t.Fatal(err)
+	}
+	wantPaths := []string{"/v1/chat/completions", "/v1/t2a_v2", "/v1/get_voice", "/v1/files/upload", "/v1/voice_clone"}
+	if len(endpoints) != len(wantPaths) {
+		t.Fatalf("unexpected endpoint count: %#v", endpoints)
+	}
+	for index, endpoint := range endpoints {
+		if endpoint != "https://api.minimaxi.com"+wantPaths[index] {
+			t.Fatalf("unexpected default endpoint %d: %s", index, endpoint)
+		}
+	}
+
+	overseas, err := NewClient(ClientConfig{
+		Provider:    ProviderMiniMax,
+		BaseURL:     "https://api.minimax.io/v1",
+		Credentials: CredentialConfig{APIKeys: "test-key"},
+		HTTPClient:  httpClient,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = overseas.Speech.Create(ctx, &speech.CreateRequest{Model: "speech-2.8-hd", Text: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := endpoints[len(endpoints)-1]; got != "https://api.minimax.io/v1/t2a_v2" {
+		t.Fatalf("unexpected overseas endpoint: %s", got)
+	}
+}
 
 func TestMiniMaxSpeechCreate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -97,6 +207,103 @@ func TestMiniMaxSpeechStream(t *testing.T) {
 	}
 	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
+	}
+}
+
+func TestMiniMaxSpeechStreamStopsAfterPayloadError(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "invalid JSON", raw: "data: {invalid-json}\n"},
+		{name: "business error", raw: "data: {\"trace_id\":\"trace-1\",\"base_resp\":{\"status_code\":1001,\"status_msg\":\"failed\"}}\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			body := io.NopCloser(strings.NewReader(test.raw))
+			stream := &miniMaxSpeechStream{
+				ctx:     ctx,
+				body:    body,
+				scanner: bufio.NewScanner(body),
+				cancel:  cancel,
+			}
+			if _, err := stream.Recv(); err == nil || errors.Is(err, io.EOF) {
+				t.Fatalf("expected stream error, got %v", err)
+			}
+			assertMiniMaxStreamFinished(t, stream)
+		})
+	}
+}
+
+func TestMiniMaxSpeechStreamStopsAfterReadError(t *testing.T) {
+	wantErr := errors.New("read failed")
+	ctx, cancel := context.WithCancel(context.Background())
+	body := &errorReadCloser{err: wantErr}
+	stream := &miniMaxSpeechStream{
+		ctx:     ctx,
+		body:    body,
+		scanner: bufio.NewScanner(body),
+		cancel:  cancel,
+	}
+	if _, err := stream.Recv(); !errors.Is(err, wantErr) {
+		t.Fatalf("expected read error, got %v", err)
+	}
+	assertMiniMaxStreamFinished(t, stream)
+}
+
+func TestMiniMaxSpeechStreamPreservesContextError(t *testing.T) {
+	tests := []struct {
+		name    string
+		context func() (context.Context, context.CancelFunc)
+		wantErr error
+	}{
+		{
+			name: "canceled",
+			context: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx, cancel
+			},
+			wantErr: context.Canceled,
+		},
+		{
+			name: "deadline exceeded",
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 20*time.Millisecond)
+			},
+			wantErr: context.DeadlineExceeded,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := test.context()
+			defer cancel()
+			body := &contextReadCloser{ctx: ctx}
+			stream := &miniMaxSpeechStream{
+				ctx:     ctx,
+				body:    body,
+				scanner: bufio.NewScanner(body),
+				cancel:  cancel,
+			}
+			if _, err := stream.Recv(); !errors.Is(err, test.wantErr) {
+				t.Fatalf("expected %v, got %v", test.wantErr, err)
+			}
+			assertMiniMaxStreamFinished(t, stream)
+		})
+	}
+}
+
+func assertMiniMaxStreamFinished(t *testing.T, stream *miniMaxSpeechStream) {
+	t.Helper()
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after stream error, got %v", err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("first close failed: %v", err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("second close failed: %v", err)
 	}
 }
 

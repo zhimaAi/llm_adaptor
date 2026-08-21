@@ -108,6 +108,7 @@ func (p *miniMaxProvider) streamSpeech(ctx context.Context, credential credentia
 	scanner := bufio.NewScanner(response.Body)
 	scanner.Buffer(make([]byte, miniMaxStreamInitialBuffer), miniMaxStreamMaximumBuffer)
 	return &miniMaxSpeechStream{
+		ctx:            streamContext,
 		body:           response.Body,
 		scanner:        scanner,
 		credentialHint: credential.hint,
@@ -132,12 +133,14 @@ func validateSpeechRequest(ctx context.Context, request *speech.CreateRequest) e
 }
 
 type miniMaxSpeechStream struct {
+	ctx            context.Context
 	body           io.ReadCloser
 	scanner        *bufio.Scanner
 	credentialHint string
 	finished       bool
 	closeOnce      sync.Once
 	cancel         context.CancelFunc
+	closeErr       error
 }
 
 func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
@@ -156,12 +159,12 @@ func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
 		}
 		chunk := &speech.StreamChunk{}
 		if err := decodeSpeechChunk(line, chunk); err != nil {
-			return nil, err
+			return s.fail(err)
 		}
 		chunk.Meta.Provider = string(ProviderMiniMax)
 		chunk.Meta.CredentialHint = s.credentialHint
 		if chunk.BaseResponse.StatusCode != 0 {
-			return nil, miniMaxBusinessError(chunk.BaseResponse, chunk.TraceID, s.credentialHint, line)
+			return s.fail(miniMaxBusinessError(chunk.BaseResponse, chunk.TraceID, s.credentialHint, line))
 		}
 		if chunk.Data != nil && chunk.Data.Status == miniMaxSpeechStatusComplete {
 			s.finished = true
@@ -169,22 +172,33 @@ func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
 		return chunk, nil
 	}
 	if err := s.scanner.Err(); err != nil {
-		return nil, err
+		return s.fail(err)
 	}
 	s.finished = true
 	return nil, io.EOF
 }
 
-func (s *miniMaxSpeechStream) Close() error {
-	var err error
+func (s *miniMaxSpeechStream) fail(err error) (*speech.StreamChunk, error) {
+	if s.ctx != nil && s.ctx.Err() != nil {
+		err = s.ctx.Err()
+	}
+	s.close()
+	return nil, err
+}
+
+func (s *miniMaxSpeechStream) close() {
 	s.closeOnce.Do(func() {
 		s.finished = true
 		if s.cancel != nil {
 			s.cancel()
 		}
-		err = s.body.Close()
+		s.closeErr = s.body.Close()
 	})
-	return err
+}
+
+func (s *miniMaxSpeechStream) Close() error {
+	s.close()
+	return s.closeErr
 }
 
 func decodeSpeechResponse(raw []byte, response *speech.CreateResponse) error {
