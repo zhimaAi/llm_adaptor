@@ -123,17 +123,24 @@ func imageFormat(mimeType, rawURL, fallback string) string {
 	}
 	if parsed, err := url.Parse(rawURL); err == nil {
 		if extension := strings.TrimPrefix(strings.ToLower(path.Ext(parsed.Path)), "."); extension != "" {
-			if extension == "jpg" {
-				return "jpeg"
+			if format := normalizeImageFormat(extension); format != "" {
+				return format
 			}
-			return extension
 		}
 	}
-	fallback = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(fallback)), ".")
-	if fallback == "jpg" {
+	return normalizeImageFormat(fallback)
+}
+
+func normalizeImageFormat(format string) string {
+	format = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(format)), ".")
+	switch format {
+	case imageFormatJPG, imageFormatJPEG:
 		return "jpeg"
+	case imageFormatPNG, "webp", "gif":
+		return format
+	default:
+		return ""
 	}
-	return fallback
 }
 
 func imageMIMEType(format string) string {

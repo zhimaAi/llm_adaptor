@@ -200,11 +200,15 @@ func TestDownloadedImageFormatUsesOriginalURLSuffix(t *testing.T) {
 }
 
 func TestUnknownImageFormatDefaultsToJPG(t *testing.T) {
-	data := image.Data{B64JSON: base64.StdEncoding.EncodeToString([]byte("image"))}
-	if err := normalizeImageData(context.Background(), ClientConfig{}, ProviderOpenAI, "hint", &image.GenerateRequest{}, &data); err != nil {
-		t.Fatal(err)
-	}
-	if data.Format != imageFormatJPG || data.MIMEType != "image/jpeg" {
-		t.Fatalf("unexpected fallback image metadata: %#v", data)
+	for _, data := range []image.Data{
+		{B64JSON: base64.StdEncoding.EncodeToString([]byte("image"))},
+		{URL: "https://example.com/generated.bin"},
+	} {
+		if err := normalizeImageData(context.Background(), ClientConfig{}, ProviderOpenAI, "hint", &image.GenerateRequest{}, &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.Format != imageFormatJPG || data.MIMEType != "image/jpeg" {
+			t.Fatalf("unexpected fallback image metadata: %#v", data)
+		}
 	}
 }
