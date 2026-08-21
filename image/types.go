@@ -2,73 +2,84 @@
 
 package image
 
-import "encoding/json"
-
 type GenerateRequest struct {
-	Model             string         `json:"model,omitempty"`
-	Prompt            string         `json:"prompt"`
-	Image             []string       `json:"image,omitempty"`
-	N                 *int           `json:"n,omitempty"`
-	Quality           string         `json:"quality,omitempty"`
-	ResponseFormat    string         `json:"response_format,omitempty"`
-	Size              string         `json:"size,omitempty"`
-	Style             string         `json:"style,omitempty"`
-	User              string         `json:"user,omitempty"`
-	Background        string         `json:"background,omitempty"`
-	OutputFormat      string         `json:"output_format,omitempty"`
-	OutputCompression *int           `json:"output_compression,omitempty"`
-	Moderation        string         `json:"moderation,omitempty"`
-	ExtraBody         map[string]any `json:"-"`
+	Model          string         `json:"model,omitempty"`
+	Prompt         string         `json:"prompt"`
+	N              *int           `json:"n,omitempty"`
+	Quality        string         `json:"quality,omitempty"`
+	ResponseFormat string         `json:"response_format,omitempty"`
+	Size           string         `json:"size,omitempty"`
+	User           string         `json:"user,omitempty"`
+	OutputFormat   string         `json:"output_format,omitempty"`
+	ExtraBody      map[string]any `json:"-"`
 }
 
 type StreamRequest struct {
 	GenerateRequest
 }
 
-type DataError struct {
-	Code    string `json:"code,omitempty"`
-	Message string `json:"message,omitempty"`
+type Input struct {
+	FileID   string `json:"file_id,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+}
+
+type EditRequest struct {
+	Model          string         `json:"model,omitempty"`
+	Images         []Input        `json:"images"`
+	Mask           *Input         `json:"mask,omitempty"`
+	Prompt         string         `json:"prompt"`
+	N              *int           `json:"n,omitempty"`
+	Quality        string         `json:"quality,omitempty"`
+	ResponseFormat string         `json:"response_format,omitempty"`
+	Size           string         `json:"size,omitempty"`
+	User           string         `json:"user,omitempty"`
+	OutputFormat   string         `json:"output_format,omitempty"`
+	ExtraBody      map[string]any `json:"-"`
+}
+
+type EditStreamRequest struct {
+	EditRequest
 }
 
 type Data struct {
-	URL           string    `json:"url,omitempty"`
-	B64JSON       string    `json:"b64_json,omitempty"`
-	RevisedPrompt string    `json:"revised_prompt,omitempty"`
-	Size          string    `json:"size,omitempty"`
-	Error         DataError `json:"error,omitempty"`
-	Format        string    `json:"-"`
-	MIMEType      string    `json:"-"`
+	URL           string `json:"url,omitempty"`
+	B64JSON       string `json:"b64_json,omitempty"`
+	RevisedPrompt string `json:"revised_prompt,omitempty"`
+}
+
+type TokenDetails struct {
+	ImageTokens int `json:"image_tokens,omitempty"`
+	TextTokens  int `json:"text_tokens,omitempty"`
 }
 
 type Usage struct {
-	InputTokens     int `json:"input_tokens,omitempty"`
-	OutputTokens    int `json:"output_tokens,omitempty"`
-	TotalTokens     int `json:"total_tokens,omitempty"`
-	GeneratedImages int `json:"generated_images,omitempty"`
+	InputTokens         int          `json:"input_tokens,omitempty"`
+	InputTokensDetails  TokenDetails `json:"input_tokens_details,omitempty"`
+	OutputTokens        int          `json:"output_tokens,omitempty"`
+	OutputTokensDetails TokenDetails `json:"output_tokens_details,omitempty"`
+	TotalTokens         int          `json:"total_tokens,omitempty"`
 }
 
 type GenerateResponse struct {
-	Created     int64                      `json:"created,omitempty"`
-	Data        []Data                     `json:"data"`
-	Usage       Usage                      `json:"usage,omitempty"`
-	ExtraFields map[string]json.RawMessage `json:"-"`
-	RawResponse json.RawMessage            `json:"-"`
+	Created      int64  `json:"created,omitempty"`
+	Background   string `json:"background,omitempty"`
+	Data         []Data `json:"data"`
+	OutputFormat string `json:"output_format,omitempty"`
+	Quality      string `json:"quality,omitempty"`
+	Size         string `json:"size,omitempty"`
+	Usage        Usage  `json:"usage,omitempty"`
 }
 
 type StreamChunk struct {
-	Type        string                     `json:"type,omitempty"`
-	Model       string                     `json:"model,omitempty"`
-	Created     int64                      `json:"created,omitempty"`
-	ImageIndex  int                        `json:"image_index,omitempty"`
-	URL         string                     `json:"url,omitempty"`
-	B64JSON     string                     `json:"b64_json,omitempty"`
-	Size        string                     `json:"size,omitempty"`
-	Error       DataError                  `json:"error,omitempty"`
-	Format      string                     `json:"-"`
-	MIMEType    string                     `json:"-"`
-	Usage       Usage                      `json:"usage,omitempty"`
-	ExtraFields map[string]json.RawMessage `json:"-"`
-	RawResponse json.RawMessage            `json:"-"`
+	Type              string `json:"type,omitempty"`
+	B64JSON           string `json:"b64_json,omitempty"`
+	PartialImageIndex int    `json:"partial_image_index,omitempty"`
+	Created           int64  `json:"created,omitempty"`
+	Background        string `json:"background,omitempty"`
+	OutputFormat      string `json:"output_format,omitempty"`
+	Quality           string `json:"quality,omitempty"`
+	Size              string `json:"size,omitempty"`
+	Usage             Usage  `json:"usage,omitempty"`
 }
 
 type Stream interface {

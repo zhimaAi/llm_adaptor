@@ -26,7 +26,7 @@ func TestServiceBaseURLPreservesCustomSubpath(t *testing.T) {
 			wantPath: "/native/custom/api/v1/services/rerank/text-rerank/text-rerank",
 			response: `{"request_id":"id","output":{"results":[{"index":0,"relevance_score":0.9}]},"usage":{"total_tokens":2}}`,
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.Rerank.Create(ctx, &rerank.CreateRequest{Model: "model", Query: "q", Documents: []rerank.Document{{Text: "d"}}})
+				_, err := client.Rerank.Create(ctx, &rerank.CreateRequest{Model: "model", Query: "q", Documents: []string{"d"}})
 				return err
 			},
 		},
@@ -35,7 +35,7 @@ func TestServiceBaseURLPreservesCustomSubpath(t *testing.T) {
 			wantPath: "/native/custom/v2/rerank",
 			response: `{"results":[{"index":0,"relevance_score":0.9}]}`,
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.Rerank.Create(ctx, &rerank.CreateRequest{Model: "model", Query: "q", Documents: []rerank.Document{{Text: "d"}}})
+				_, err := client.Rerank.Create(ctx, &rerank.CreateRequest{Model: "model", Query: "q", Documents: []string{"d"}})
 				return err
 			},
 		},

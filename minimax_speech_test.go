@@ -168,9 +168,6 @@ func TestMiniMaxSpeechCreate(t *testing.T) {
 	if response.Data == nil || response.Data.Audio != "abcd" || response.TraceID != "trace-1" {
 		t.Fatalf("unexpected response: %#v", response)
 	}
-	if _, exists := response.ExtraFields["provider_field"]; !exists {
-		t.Fatalf("provider extension was not preserved: %#v", response.ExtraFields)
-	}
 }
 
 func TestMiniMaxSpeechStream(t *testing.T) {

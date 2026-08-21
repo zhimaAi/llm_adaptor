@@ -21,6 +21,7 @@ const (
 	ChatCompletionsPath   = "/chat/completions"
 	EmbeddingsPath        = "/embeddings"
 	ImageGenerationsPath  = "/images/generations"
+	ImageEditsPath        = "/images/edits"
 )
 
 type Client struct {
@@ -65,6 +66,14 @@ type imageProvider interface {
 
 type imageStreamProvider interface {
 	streamImage(context.Context, credential, *image.StreamRequest) (image.Stream, error)
+}
+
+type imageEditProvider interface {
+	editImage(context.Context, credential, *image.EditRequest) (*image.GenerateResponse, error)
+}
+
+type imageEditStreamProvider interface {
+	streamImageEdit(context.Context, credential, *image.EditStreamRequest) (image.Stream, error)
 }
 
 type rerankProvider interface {
@@ -202,6 +211,36 @@ func (s ImageService) Stream(ctx context.Context, req *image.StreamRequest) (ima
 		return nil, err
 	}
 	return provider.streamImage(ctx, selected, req)
+}
+
+func (s ImageService) Edit(ctx context.Context, req *image.EditRequest) (*image.GenerateResponse, error) {
+	if !s.client.supports(CapabilityImage) {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
+	}
+	provider, ok := s.client.provider.(imageEditProvider)
+	if !ok {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
+	}
+	selected, err := s.client.credentials.selectCredential()
+	if err != nil {
+		return nil, err
+	}
+	return provider.editImage(ctx, selected, req)
+}
+
+func (s ImageService) EditStream(ctx context.Context, req *image.EditStreamRequest) (image.Stream, error) {
+	if !s.client.supports(CapabilityImage) {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
+	}
+	provider, ok := s.client.provider.(imageEditStreamProvider)
+	if !ok {
+		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
+	}
+	selected, err := s.client.credentials.selectCredential()
+	if err != nil {
+		return nil, err
+	}
+	return provider.streamImageEdit(ctx, selected, req)
 }
 
 type RerankService struct{ client *Client }
@@ -399,7 +438,7 @@ var providerDefinitions = map[Provider]providerDefinition{
 		defaultBaseURL: "https://openrouter.ai/api/v1",
 		newProvider:    func(config ClientConfig) providerImplementation { return newOpenRouterProvider(config) },
 	},
-	ProviderSiliconFlow: newRerankProviderDefinition("https://api.siliconflow.cn/v1", ProviderSiliconFlow, false, "/rerank", "documents", "top_k", CapabilityChat, CapabilityEmbedding, CapabilityRerank),
+	ProviderSiliconFlow: newRerankProviderDefinition("https://api.siliconflow.cn/v1", ProviderSiliconFlow, false, "/rerank", "documents", "top_n", CapabilityChat, CapabilityEmbedding, CapabilityRerank),
 	ProviderSpark:       newGenericProviderDefinition("https://spark-api-open.xf-yun.com/v1", ProviderSpark, false, CapabilityChat),
 	ProviderXinference:  newRerankProviderDefinition("", ProviderXinference, true, "/rerank", "documents", "top_n", CapabilityChat, CapabilityEmbedding, CapabilityRerank),
 	ProviderZhipu:       newGenericProviderDefinition("https://open.bigmodel.cn/api/paas/v4", ProviderZhipu, false, CapabilityChat, CapabilityEmbedding),

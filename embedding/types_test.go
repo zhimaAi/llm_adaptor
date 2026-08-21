@@ -19,8 +19,12 @@ func TestDataUnmarshalBase64Float32(t *testing.T) {
 	if err := json.Unmarshal(raw, &data); err != nil {
 		t.Fatal(err)
 	}
-	if len(data.Embedding) != 2 || data.Embedding[0] != 1.5 || data.Embedding[1] != -2.25 {
-		t.Fatalf("unexpected embedding: %#v", data.Embedding)
+	values, err := data.Embedding.Float64s()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 2 || values[0] != 1.5 || values[1] != -2.25 {
+		t.Fatalf("unexpected embedding: %#v", values)
 	}
 }
 
@@ -30,8 +34,11 @@ func TestDataRejectsInvalidBase64Embedding(t *testing.T) {
 		`{"embedding":"AQ==","index":0}`,
 	} {
 		var data Data
-		if err := json.Unmarshal([]byte(raw), &data); err == nil {
-			t.Fatalf("accepted invalid embedding %s", raw)
+		if err := json.Unmarshal([]byte(raw), &data); err != nil {
+			t.Fatalf("failed to preserve base64 embedding %s: %v", raw, err)
+		}
+		if _, err := data.Embedding.Float64s(); err == nil {
+			t.Fatalf("decoded invalid embedding %s", raw)
 		}
 	}
 }

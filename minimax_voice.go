@@ -5,7 +5,6 @@ package llm
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -28,6 +27,37 @@ const (
 	miniMaxMaximumVoiceFileSize = int64(20 * 1024 * 1024)
 )
 
+var miniMaxListVoicesReservedRequestKeys = map[string]struct{}{"voice_type": {}}
+
+var miniMaxCloneVoiceReservedRequestKeys = map[string]struct{}{
+	"file_id": {}, "voice_id": {}, "clone_prompt": {}, "text": {}, "model": {},
+	"language_boost": {}, "text_validation": {}, "accuracy": {}, "need_noise_reduction": {},
+	"need_volume_normalization": {}, "aigc_watermark": {},
+}
+
+type miniMaxListVoicesWireRequest struct {
+	VoiceType string `json:"voice_type"`
+}
+
+type miniMaxCloneVoiceWireRequest struct {
+	FileID                  int64                   `json:"file_id"`
+	VoiceID                 string                  `json:"voice_id"`
+	ClonePrompt             *miniMaxClonePromptWire `json:"clone_prompt,omitempty"`
+	Text                    string                  `json:"text,omitempty"`
+	Model                   string                  `json:"model,omitempty"`
+	LanguageBoost           string                  `json:"language_boost,omitempty"`
+	TextValidation          string                  `json:"text_validation,omitempty"`
+	Accuracy                *float64                `json:"accuracy,omitempty"`
+	NeedNoiseReduction      *bool                   `json:"need_noise_reduction,omitempty"`
+	NeedVolumeNormalization *bool                   `json:"need_volume_normalization,omitempty"`
+	AIGCWatermark           *bool                   `json:"aigc_watermark,omitempty"`
+}
+
+type miniMaxClonePromptWire struct {
+	PromptAudio int64  `json:"prompt_audio"`
+	PromptText  string `json:"prompt_text"`
+}
+
 func (p *miniMaxProvider) listVoices(ctx context.Context, selected credential, request *speech.ListVoicesRequest) (*speech.ListVoicesResponse, error) {
 	if ctx == nil {
 		return nil, ErrNilContext
@@ -35,10 +65,15 @@ func (p *miniMaxProvider) listVoices(ctx context.Context, selected credential, r
 	if request == nil {
 		return nil, fmt.Errorf("%w: list voices request is nil", ErrInvalidRequest)
 	}
-	if request.VoiceType == "" {
-		request = &speech.ListVoicesRequest{VoiceType: speech.VoiceTypeAll}
+	voiceType := request.VoiceType
+	if voiceType == "" {
+		voiceType = speech.VoiceTypeAll
 	}
-	httpRequest, err := newJSONRequest(ctx, p.config, bearerPrefix+selected.apiKey, p.config.BaseURL+miniMaxListVoicesPath, request)
+	body, err := mergeExtraBody(miniMaxListVoicesWireRequest{VoiceType: string(voiceType)}, request.ExtraBody, miniMaxListVoicesReservedRequestKeys)
+	if err != nil {
+		return nil, err
+	}
+	httpRequest, err := newJSONRequest(ctx, p.config, bearerPrefix+selected.apiKey, p.config.BaseURL+miniMaxListVoicesPath, body)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +81,10 @@ func (p *miniMaxProvider) listVoices(ctx context.Context, selected credential, r
 	if err != nil {
 		return nil, err
 	}
-	response := &speech.ListVoicesResponse{}
-	if err := json.Unmarshal(raw, response); err != nil {
+	response, err := decodeMiniMaxListVoicesResponse(raw)
+	if err != nil {
 		return nil, err
 	}
-	setMiniMaxListVoicesMeta(response, raw, selected.hint)
 	if response.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(response.BaseResponse, "", selected.hint, raw)
 	}
@@ -111,14 +145,10 @@ func (p *miniMaxProvider) uploadVoiceFile(ctx context.Context, selected credenti
 	if err != nil {
 		return nil, err
 	}
-	response := &speech.UploadVoiceFileResponse{}
-	if err := json.Unmarshal(raw, response); err != nil {
+	response, err := decodeMiniMaxUploadVoiceFileResponse(raw)
+	if err != nil {
 		return nil, err
 	}
-	response.RawResponse = append(response.RawResponse[:0], raw...)
-	response.ExtraFields = extractExtraFields(raw, "file", "base_resp")
-	response.Meta.Provider = string(ProviderMiniMax)
-	response.Meta.CredentialHint = selected.hint
 	if response.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(response.BaseResponse, "", selected.hint, raw)
 	}
@@ -132,7 +162,20 @@ func (p *miniMaxProvider) cloneVoice(ctx context.Context, selected credential, r
 	if request == nil || request.FileID <= 0 || strings.TrimSpace(request.VoiceID) == "" {
 		return nil, fmt.Errorf("%w: MiniMax file_id and voice_id are required", ErrInvalidRequest)
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	wire := miniMaxCloneVoiceWireRequest{
+		FileID: request.FileID, VoiceID: request.VoiceID,
+		Text: request.Text, Model: request.Model, LanguageBoost: request.LanguageBoost,
+		TextValidation: request.TextValidation, Accuracy: request.Accuracy,
+		NeedNoiseReduction:      request.NeedNoiseReduction,
+		NeedVolumeNormalization: request.NeedVolumeNormalization,
+		AIGCWatermark:           request.AIGCWatermark,
+	}
+	if request.ClonePrompt != nil {
+		wire.ClonePrompt = &miniMaxClonePromptWire{
+			PromptAudio: request.ClonePrompt.PromptAudio, PromptText: request.ClonePrompt.PromptText,
+		}
+	}
+	body, err := mergeExtraBody(wire, request.ExtraBody, miniMaxCloneVoiceReservedRequestKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -144,14 +187,10 @@ func (p *miniMaxProvider) cloneVoice(ctx context.Context, selected credential, r
 	if err != nil {
 		return nil, err
 	}
-	response := &speech.CloneVoiceResponse{}
-	if err := json.Unmarshal(raw, response); err != nil {
+	response, err := decodeMiniMaxCloneVoiceResponse(raw)
+	if err != nil {
 		return nil, err
 	}
-	response.RawResponse = append(response.RawResponse[:0], raw...)
-	response.ExtraFields = extractExtraFields(raw, "input_sensitive", "input_sensitive_type", "demo_audio", "base_resp")
-	response.Meta.Provider = string(ProviderMiniMax)
-	response.Meta.CredentialHint = selected.hint
 	if response.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(response.BaseResponse, "", selected.hint, raw)
 	}
@@ -168,13 +207,6 @@ func (p *miniMaxProvider) doMiniMaxVoiceRequest(request *http.Request, credentia
 		return nil, err
 	}
 	return io.ReadAll(response.Body)
-}
-
-func setMiniMaxListVoicesMeta(response *speech.ListVoicesResponse, raw []byte, credentialHint string) {
-	response.RawResponse = append(response.RawResponse[:0], raw...)
-	response.ExtraFields = extractExtraFields(raw, "system_voice", "voice_cloning", "voice_generation", "base_resp")
-	response.Meta.Provider = string(ProviderMiniMax)
-	response.Meta.CredentialHint = credentialHint
 }
 
 var _ speechVoiceProvider = (*miniMaxProvider)(nil)

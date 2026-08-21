@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +25,67 @@ type miniMaxProvider struct {
 	*openAICompatibleProvider
 }
 
+var miniMaxSpeechReservedRequestKeys = map[string]struct{}{
+	"model": {}, "text": {}, "language_boost": {}, "voice_setting": {}, "audio_setting": {},
+	"pronunciation_dict": {}, "timbre_weights": {}, "voice_modify": {}, "subtitle_enable": {},
+	"subtitle_type": {}, "output_format": {}, "aigc_watermark": {}, "stream": {}, "stream_options": {},
+}
+
+type miniMaxSpeechWireRequest struct {
+	Model                   string                              `json:"model"`
+	Text                    string                              `json:"text"`
+	LanguageBoost           string                              `json:"language_boost,omitempty"`
+	VoiceSetting            *miniMaxVoiceSettingWire            `json:"voice_setting,omitempty"`
+	AudioSetting            *miniMaxAudioSettingWire            `json:"audio_setting,omitempty"`
+	PronunciationDictionary *miniMaxPronunciationDictionaryWire `json:"pronunciation_dict,omitempty"`
+	TimbreWeights           []miniMaxTimbreWeightWire           `json:"timbre_weights,omitempty"`
+	VoiceModification       *miniMaxVoiceModificationWire       `json:"voice_modify,omitempty"`
+	SubtitleEnabled         *bool                               `json:"subtitle_enable,omitempty"`
+	SubtitleType            string                              `json:"subtitle_type,omitempty"`
+	OutputFormat            string                              `json:"output_format,omitempty"`
+	AIGCWatermark           *bool                               `json:"aigc_watermark,omitempty"`
+	Stream                  bool                                `json:"stream"`
+	StreamOptions           *miniMaxStreamOptionsWire           `json:"stream_options,omitempty"`
+}
+
+type miniMaxVoiceSettingWire struct {
+	VoiceID              string   `json:"voice_id"`
+	Speed                *float64 `json:"speed,omitempty"`
+	Volume               *float64 `json:"vol,omitempty"`
+	Pitch                *int     `json:"pitch,omitempty"`
+	Emotion              string   `json:"emotion,omitempty"`
+	EnglishNormalization *bool    `json:"english_normalization,omitempty"`
+	LatexRead            *bool    `json:"latex_read,omitempty"`
+}
+
+type miniMaxAudioSettingWire struct {
+	SampleRate int    `json:"sample_rate,omitempty"`
+	Bitrate    int    `json:"bitrate,omitempty"`
+	Format     string `json:"format,omitempty"`
+	Channel    int    `json:"channel,omitempty"`
+	ForceCBR   *bool  `json:"force_cbr,omitempty"`
+}
+
+type miniMaxPronunciationDictionaryWire struct {
+	Tone []string `json:"tone,omitempty"`
+}
+
+type miniMaxTimbreWeightWire struct {
+	VoiceID string `json:"voice_id"`
+	Weight  int    `json:"weight"`
+}
+
+type miniMaxVoiceModificationWire struct {
+	Pitch        *int   `json:"pitch,omitempty"`
+	Intensity    *int   `json:"intensity,omitempty"`
+	Timbre       *int   `json:"timbre,omitempty"`
+	SoundEffects string `json:"sound_effects,omitempty"`
+}
+
+type miniMaxStreamOptionsWire struct {
+	ExcludeAggregatorAudio *bool `json:"exclude_aggregator_audio,omitempty"`
+}
+
 func newMiniMaxProvider(config ClientConfig) *miniMaxProvider {
 	return &miniMaxProvider{openAICompatibleProvider: newOpenAICompatibleProvider(
 		config,
@@ -41,11 +101,10 @@ func (p *miniMaxProvider) createSpeech(ctx context.Context, credential credentia
 	if err := validateSpeechRequest(ctx, request); err != nil {
 		return nil, err
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	body, err := buildMiniMaxSpeechRequest(request, false, nil)
 	if err != nil {
 		return nil, err
 	}
-	body["stream"] = false
 	httpRequest, err := newJSONRequest(ctx, p.config, bearerPrefix+credential.apiKey, p.config.BaseURL+MiniMaxSpeechPath, body)
 	if err != nil {
 		return nil, err
@@ -62,12 +121,10 @@ func (p *miniMaxProvider) createSpeech(ctx context.Context, credential credentia
 	if err != nil {
 		return nil, err
 	}
-	result := &speech.CreateResponse{}
-	if err := decodeSpeechResponse(raw, result); err != nil {
+	result, err := decodeMiniMaxSpeechResponse(raw)
+	if err != nil {
 		return nil, err
 	}
-	result.Meta.Provider = string(ProviderMiniMax)
-	result.Meta.CredentialHint = credential.hint
 	if result.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(result.BaseResponse, result.TraceID, credential.hint, raw)
 	}
@@ -81,12 +138,10 @@ func (p *miniMaxProvider) streamSpeech(ctx context.Context, credential credentia
 	if err := validateSpeechRequest(ctx, &request.CreateRequest); err != nil {
 		return nil, err
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	body, err := buildMiniMaxSpeechRequest(&request.CreateRequest, true, request.StreamOptions)
 	if err != nil {
 		return nil, err
 	}
-	body["stream"] = true
-	body["output_format"] = string(speech.OutputFormatHex)
 	streamContext, cancel := context.WithCancel(ctx)
 	httpRequest, err := newJSONRequest(streamContext, p.config, bearerPrefix+credential.apiKey, p.config.BaseURL+MiniMaxSpeechPath, body)
 	if err != nil {
@@ -151,12 +206,10 @@ func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
 			s.terminal.finish()
 			return nil, io.EOF
 		}
-		chunk := &speech.StreamChunk{}
-		if err := decodeSpeechChunk(line, chunk); err != nil {
+		chunk, err := decodeMiniMaxSpeechChunk(line)
+		if err != nil {
 			return s.fail(err)
 		}
-		chunk.Meta.Provider = string(ProviderMiniMax)
-		chunk.Meta.CredentialHint = s.credentialHint
 		if chunk.BaseResponse.StatusCode != 0 {
 			return s.fail(miniMaxBusinessError(chunk.BaseResponse, chunk.TraceID, s.credentialHint, line))
 		}
@@ -186,36 +239,50 @@ func (s *miniMaxSpeechStream) Close() error {
 	return s.terminal.close()
 }
 
-func decodeSpeechResponse(raw []byte, response *speech.CreateResponse) error {
-	if err := json.Unmarshal(raw, response); err != nil {
-		return err
+func buildMiniMaxSpeechRequest(request *speech.CreateRequest, stream bool, streamOptions *speech.StreamOptions) (map[string]any, error) {
+	outputFormat := request.OutputFormat
+	if stream {
+		outputFormat = speech.OutputFormatHex
 	}
-	response.RawResponse = append(response.RawResponse[:0], raw...)
-	response.ExtraFields = extractExtraFields(raw, "data", "extra_info", "trace_id", "base_resp")
-	return nil
-}
-
-func decodeSpeechChunk(raw []byte, response *speech.StreamChunk) error {
-	if err := json.Unmarshal(raw, response); err != nil {
-		return err
+	wire := miniMaxSpeechWireRequest{
+		Model: request.Model, Text: request.Text, LanguageBoost: request.LanguageBoost,
+		SubtitleEnabled: request.SubtitleEnabled, SubtitleType: string(request.SubtitleType),
+		OutputFormat: string(outputFormat), AIGCWatermark: request.AIGCWatermark, Stream: stream,
 	}
-	response.RawResponse = append(response.RawResponse[:0], raw...)
-	response.ExtraFields = extractExtraFields(raw, "data", "extra_info", "trace_id", "base_resp")
-	return nil
-}
-
-func extractExtraFields(raw []byte, knownFields ...string) map[string]json.RawMessage {
-	fields := make(map[string]json.RawMessage)
-	if json.Unmarshal(raw, &fields) != nil {
-		return nil
+	if request.VoiceSetting != nil {
+		wire.VoiceSetting = &miniMaxVoiceSettingWire{
+			VoiceID: request.VoiceSetting.VoiceID, Speed: request.VoiceSetting.Speed,
+			Volume: request.VoiceSetting.Volume, Pitch: request.VoiceSetting.Pitch,
+			Emotion: request.VoiceSetting.Emotion, EnglishNormalization: request.VoiceSetting.EnglishNormalization,
+			LatexRead: request.VoiceSetting.LatexRead,
+		}
 	}
-	for _, field := range knownFields {
-		delete(fields, field)
+	if request.AudioSetting != nil {
+		wire.AudioSetting = &miniMaxAudioSettingWire{
+			SampleRate: request.AudioSetting.SampleRate, Bitrate: request.AudioSetting.Bitrate,
+			Format: string(request.AudioSetting.Format), Channel: request.AudioSetting.Channel,
+			ForceCBR: request.AudioSetting.ForceCBR,
+		}
 	}
-	if len(fields) == 0 {
-		return nil
+	if request.PronunciationDictionary != nil {
+		wire.PronunciationDictionary = &miniMaxPronunciationDictionaryWire{
+			Tone: append([]string(nil), request.PronunciationDictionary.Tone...),
+		}
 	}
-	return fields
+	wire.TimbreWeights = make([]miniMaxTimbreWeightWire, len(request.TimbreWeights))
+	for index, weight := range request.TimbreWeights {
+		wire.TimbreWeights[index] = miniMaxTimbreWeightWire{VoiceID: weight.VoiceID, Weight: weight.Weight}
+	}
+	if request.VoiceModification != nil {
+		wire.VoiceModification = &miniMaxVoiceModificationWire{
+			Pitch: request.VoiceModification.Pitch, Intensity: request.VoiceModification.Intensity,
+			Timbre: request.VoiceModification.Timbre, SoundEffects: request.VoiceModification.SoundEffects,
+		}
+	}
+	if streamOptions != nil {
+		wire.StreamOptions = &miniMaxStreamOptionsWire{ExcludeAggregatorAudio: streamOptions.ExcludeAggregatorAudio}
+	}
+	return mergeExtraBody(wire, request.ExtraBody, miniMaxSpeechReservedRequestKeys)
 }
 
 func miniMaxBusinessError(baseResponse speech.BaseResponse, traceID, credentialHint string, raw []byte) error {

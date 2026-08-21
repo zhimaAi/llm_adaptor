@@ -134,7 +134,7 @@ func checkHTTPResponse(provider Provider, credentialHint string, response *http.
 	return apiError
 }
 
-func mergeExtraBody(value any, extra map[string]any) (map[string]any, error) {
+func mergeExtraBody(value any, extra map[string]any, reservedSets ...map[string]struct{}) (map[string]any, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -144,6 +144,14 @@ func mergeExtraBody(value any, extra map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	for key, item := range extra {
+		if _, exists := result[key]; exists {
+			return nil, fmt.Errorf("%w: extra_body field %q conflicts with a request field", ErrInvalidRequest, key)
+		}
+		for _, reserved := range reservedSets {
+			if _, exists := reserved[key]; exists {
+				return nil, fmt.Errorf("%w: extra_body field %q conflicts with a reserved request field", ErrInvalidRequest, key)
+			}
+		}
 		result[key] = item
 	}
 	return result, nil

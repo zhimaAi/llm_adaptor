@@ -4,7 +4,6 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,11 +38,10 @@ func (p *azureProvider) createChat(ctx context.Context, selected credential, req
 	if err != nil {
 		return nil, err
 	}
-	result := &chat.CreateResponse{}
-	if err := json.Unmarshal(raw, result); err != nil {
+	result, err := decodeOpenAIChatResponse(raw)
+	if err != nil {
 		return nil, err
 	}
-	result.RawResponse = append(result.RawResponse[:0], raw...)
 	normalizeThinkTaggedResponse(result)
 	return result, nil
 }
@@ -70,7 +68,15 @@ func (p *azureProvider) createEmbedding(ctx context.Context, selected credential
 	if request == nil || request.Model == "" {
 		return nil, fmt.Errorf("%w: embedding model is required", ErrInvalidRequest)
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	input, err := openAIEmbeddingInput(request.Input)
+	if err != nil {
+		return nil, err
+	}
+	wire := openAIEmbeddingWireRequest{
+		Model: request.Model, Input: input, EncodingFormat: request.EncodingFormat,
+		Dimensions: request.Dimensions, User: request.User,
+	}
+	body, err := mergeExtraBody(wire, request.ExtraBody, embeddingReservedRequestKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -79,11 +85,10 @@ func (p *azureProvider) createEmbedding(ctx context.Context, selected credential
 	if err != nil {
 		return nil, err
 	}
-	result := &embedding.CreateResponse{}
-	if err := json.Unmarshal(raw, result); err != nil {
+	result, err := decodeOpenAIEmbeddingResponse(raw)
+	if err != nil {
 		return nil, err
 	}
-	result.RawResponse = append(result.RawResponse[:0], raw...)
 	return result, nil
 }
 

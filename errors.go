@@ -20,6 +20,16 @@ type UnsupportedCapabilityError struct {
 	Capability Capability
 }
 
+type UnsupportedParameterError struct {
+	Provider   Provider
+	Capability Capability
+	Parameter  string
+}
+
+func (e *UnsupportedParameterError) Error() string {
+	return fmt.Sprintf("provider %q does not support parameter %q for capability %q", e.Provider, e.Parameter, e.Capability)
+}
+
 func (e *UnsupportedCapabilityError) Error() string {
 	return fmt.Sprintf("provider %q does not support capability %q", e.Provider, e.Capability)
 }
@@ -50,10 +60,4 @@ func (e *APIError) Error() string {
 
 func (e *APIError) Unwrap() error {
 	return e.Err
-}
-
-type ResponseMeta struct {
-	Provider          Provider `json:"-"`
-	CredentialHint    string   `json:"-"`
-	IgnoredParameters []string `json:"-"`
 }

@@ -65,50 +65,78 @@ type CreateRequest struct {
 }
 
 type Data struct {
-	Object    string    `json:"object"`
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
+	Object    string         `json:"object"`
+	Embedding EmbeddingValue `json:"embedding"`
+	Index     int            `json:"index"`
 }
 
-func (d *Data) UnmarshalJSON(raw []byte) error {
-	var value struct {
-		Object    string          `json:"object"`
-		Embedding json.RawMessage `json:"embedding"`
-		Index     int             `json:"index"`
+type EmbeddingValue struct {
+	Floats []float64
+	Base64 *string
+}
+
+func FloatEmbedding(values []float64) EmbeddingValue {
+	return EmbeddingValue{Floats: append([]float64(nil), values...)}
+}
+
+func Base64Embedding(value string) EmbeddingValue {
+	return EmbeddingValue{Base64: &value}
+}
+
+func (v EmbeddingValue) MarshalJSON() ([]byte, error) {
+	if v.Base64 != nil {
+		return json.Marshal(*v.Base64)
 	}
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return err
-	}
-	d.Object, d.Index = value.Object, value.Index
-	if len(value.Embedding) == 0 || string(value.Embedding) == "null" {
+	return json.Marshal(v.Floats)
+}
+
+func (v *EmbeddingValue) UnmarshalJSON(raw []byte) error {
+	if len(raw) == 0 || string(raw) == "null" {
 		return fmt.Errorf("embedding value is empty")
 	}
-	if value.Embedding[0] != '"' {
-		if err := json.Unmarshal(value.Embedding, &d.Embedding); err != nil {
+	if raw[0] != '"' {
+		if err := json.Unmarshal(raw, &v.Floats); err != nil {
 			return err
 		}
-		if len(d.Embedding) == 0 {
+		if len(v.Floats) == 0 {
 			return fmt.Errorf("embedding value is empty")
 		}
+		v.Base64 = nil
 		return nil
 	}
 	var encoded string
-	if err := json.Unmarshal(value.Embedding, &encoded); err != nil {
+	if err := json.Unmarshal(raw, &encoded); err != nil {
 		return err
 	}
+	if encoded == "" {
+		return fmt.Errorf("embedding value is empty")
+	}
+	v.Base64 = &encoded
+	v.Floats = nil
+	return nil
+}
+
+func (v EmbeddingValue) Float64s() ([]float64, error) {
+	if len(v.Floats) > 0 {
+		return append([]float64(nil), v.Floats...), nil
+	}
+	if v.Base64 == nil || *v.Base64 == "" {
+		return nil, fmt.Errorf("embedding value is empty")
+	}
+	encoded := *v.Base64
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return fmt.Errorf("decode base64 embedding: %w", err)
+		return nil, fmt.Errorf("decode base64 embedding: %w", err)
 	}
 	if len(decoded) == 0 || len(decoded)%4 != 0 {
-		return fmt.Errorf("base64 embedding byte length must be a positive multiple of 4")
+		return nil, fmt.Errorf("base64 embedding byte length must be a positive multiple of 4")
 	}
-	d.Embedding = make([]float64, len(decoded)/4)
-	for index := range d.Embedding {
+	values := make([]float64, len(decoded)/4)
+	for index := range values {
 		bits := binary.LittleEndian.Uint32(decoded[index*4 : index*4+4])
-		d.Embedding[index] = float64(math.Float32frombits(bits))
+		values[index] = float64(math.Float32frombits(bits))
 	}
-	return nil
+	return values, nil
 }
 
 type Usage struct {
@@ -117,10 +145,8 @@ type Usage struct {
 }
 
 type CreateResponse struct {
-	Object      string                     `json:"object"`
-	Data        []Data                     `json:"data"`
-	Model       string                     `json:"model"`
-	Usage       Usage                      `json:"usage"`
-	ExtraFields map[string]json.RawMessage `json:"-"`
-	RawResponse json.RawMessage            `json:"-"`
+	Object string `json:"object"`
+	Data   []Data `json:"data"`
+	Model  string `json:"model"`
+	Usage  Usage  `json:"usage"`
 }

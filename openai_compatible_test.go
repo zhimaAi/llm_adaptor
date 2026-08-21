@@ -53,9 +53,6 @@ func TestOpenAICompatibleChatUsesSelectedCredentialAndPreservesFields(t *testing
 		if message.Content.Text == nil || *message.Content.Text != "a" || message.ReasoningContent != "r" {
 			t.Fatalf("unexpected normalized response: %#v", response)
 		}
-		if _, exists := response.ExtraFields["provider_field"]; !exists {
-			t.Fatalf("missing provider extension: %#v", response.ExtraFields)
-		}
 	}
 	if len(authorizations) != 2 || authorizations[0] != bearerPrefix+"key1" || authorizations[1] != bearerPrefix+"key2" {
 		t.Fatalf("unexpected authorizations: %#v", authorizations)

@@ -2,10 +2,6 @@
 
 package speech
 
-import (
-	"encoding/json"
-)
-
 type AudioFormat string
 
 const (
@@ -80,6 +76,7 @@ type CreateRequest struct {
 	SubtitleEnabled         *bool                    `json:"subtitle_enable,omitempty"`
 	SubtitleType            SubtitleType             `json:"subtitle_type,omitempty"`
 	OutputFormat            OutputFormat             `json:"output_format,omitempty"`
+	AIGCWatermark           *bool                    `json:"aigc_watermark,omitempty"`
 	ExtraBody               map[string]any           `json:"-"`
 }
 
@@ -110,30 +107,18 @@ type BaseResponse struct {
 	StatusMsg  string `json:"status_msg"`
 }
 
-type ResponseMeta struct {
-	Provider          string   `json:"-"`
-	CredentialHint    string   `json:"-"`
-	IgnoredParameters []string `json:"-"`
-}
-
 type CreateResponse struct {
-	Data         *AudioData                 `json:"data,omitempty"`
-	ExtraInfo    *AudioInfo                 `json:"extra_info,omitempty"`
-	TraceID      string                     `json:"trace_id,omitempty"`
-	BaseResponse BaseResponse               `json:"base_resp"`
-	ExtraFields  map[string]json.RawMessage `json:"-"`
-	RawResponse  json.RawMessage            `json:"-"`
-	Meta         ResponseMeta               `json:"-"`
+	Data         *AudioData   `json:"data,omitempty"`
+	ExtraInfo    *AudioInfo   `json:"extra_info,omitempty"`
+	TraceID      string       `json:"trace_id,omitempty"`
+	BaseResponse BaseResponse `json:"base_resp"`
 }
 
 type StreamChunk struct {
-	Data         *AudioData                 `json:"data,omitempty"`
-	ExtraInfo    *AudioInfo                 `json:"extra_info,omitempty"`
-	TraceID      string                     `json:"trace_id,omitempty"`
-	BaseResponse BaseResponse               `json:"base_resp"`
-	ExtraFields  map[string]json.RawMessage `json:"-"`
-	RawResponse  json.RawMessage            `json:"-"`
-	Meta         ResponseMeta               `json:"-"`
+	Data         *AudioData   `json:"data,omitempty"`
+	ExtraInfo    *AudioInfo   `json:"extra_info,omitempty"`
+	TraceID      string       `json:"trace_id,omitempty"`
+	BaseResponse BaseResponse `json:"base_resp"`
 }
 
 type VoiceType string
@@ -145,20 +130,23 @@ const (
 	VoiceTypeAll        VoiceType = "all"
 )
 
-type Voice map[string]any
+type Voice struct {
+	VoiceID     string   `json:"voice_id"`
+	Description []string `json:"description,omitempty"`
+	VoiceName   string   `json:"voice_name,omitempty"`
+	CreatedTime string   `json:"created_time,omitempty"`
+}
 
 type ListVoicesRequest struct {
-	VoiceType VoiceType `json:"voice_type"`
+	VoiceType VoiceType      `json:"voice_type"`
+	ExtraBody map[string]any `json:"-"`
 }
 
 type ListVoicesResponse struct {
-	SystemVoices    []Voice                    `json:"system_voice,omitempty"`
-	ClonedVoices    []Voice                    `json:"voice_cloning,omitempty"`
-	GeneratedVoices []Voice                    `json:"voice_generation,omitempty"`
-	BaseResponse    BaseResponse               `json:"base_resp"`
-	ExtraFields     map[string]json.RawMessage `json:"-"`
-	RawResponse     json.RawMessage            `json:"-"`
-	Meta            ResponseMeta               `json:"-"`
+	SystemVoices    []Voice      `json:"system_voice,omitempty"`
+	ClonedVoices    []Voice      `json:"voice_cloning,omitempty"`
+	GeneratedVoices []Voice      `json:"voice_generation,omitempty"`
+	BaseResponse    BaseResponse `json:"base_resp"`
 }
 
 type UploadVoiceFileRequest struct {
@@ -175,11 +163,8 @@ type UploadedFile struct {
 }
 
 type UploadVoiceFileResponse struct {
-	File         UploadedFile               `json:"file"`
-	BaseResponse BaseResponse               `json:"base_resp"`
-	ExtraFields  map[string]json.RawMessage `json:"-"`
-	RawResponse  json.RawMessage            `json:"-"`
-	Meta         ResponseMeta               `json:"-"`
+	File         UploadedFile `json:"file"`
+	BaseResponse BaseResponse `json:"base_resp"`
 }
 
 type ClonePrompt struct {
@@ -194,19 +179,20 @@ type CloneVoiceRequest struct {
 	Text                    string         `json:"text,omitempty"`
 	Model                   string         `json:"model,omitempty"`
 	LanguageBoost           string         `json:"language_boost,omitempty"`
+	TextValidation          string         `json:"text_validation,omitempty"`
+	Accuracy                *float64       `json:"accuracy,omitempty"`
 	NeedNoiseReduction      *bool          `json:"need_noise_reduction,omitempty"`
 	NeedVolumeNormalization *bool          `json:"need_volume_normalization,omitempty"`
+	AIGCWatermark           *bool          `json:"aigc_watermark,omitempty"`
 	ExtraBody               map[string]any `json:"-"`
 }
 
 type CloneVoiceResponse struct {
-	InputSensitive     any                        `json:"input_sensitive,omitempty"`
-	InputSensitiveType int                        `json:"input_sensitive_type,omitempty"`
-	DemoAudio          string                     `json:"demo_audio,omitempty"`
-	BaseResponse       BaseResponse               `json:"base_resp"`
-	ExtraFields        map[string]json.RawMessage `json:"-"`
-	RawResponse        json.RawMessage            `json:"-"`
-	Meta               ResponseMeta               `json:"-"`
+	InputSensitive     bool         `json:"input_sensitive,omitempty"`
+	InputSensitiveType int          `json:"input_sensitive_type,omitempty"`
+	DemoAudio          string       `json:"demo_audio,omitempty"`
+	ExtraInfo          *AudioInfo   `json:"extra_info,omitempty"`
+	BaseResponse       BaseResponse `json:"base_resp"`
 }
 
 type CloneVoiceFromFilesRequest struct {

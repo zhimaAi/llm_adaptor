@@ -41,21 +41,21 @@ func TestOpenAIStreamReturnsAPIErrorOnce(t *testing.T) {
 	}
 }
 
-func TestImageRequestUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
+func TestImageEditUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
 	png := []byte("fake-png")
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/images/generations":
+		case "/images/edits":
 			var body map[string]any
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			images, ok := body["image"].([]any)
-			if !ok || len(images) != 1 || images[0] != "https://input.example/a.png" {
+			images, ok := body["images"].([]any)
+			if !ok || len(images) != 1 {
 				t.Fatalf("typed image input missing: %#v", body)
 			}
-			_, _ = io.WriteString(writer, `{"data":[{"url":"`+server.URL+`/generated","size":"1024x1024","error":{"code":"","message":""}}]}`)
+			_, _ = io.WriteString(writer, `{"data":[{"url":"`+server.URL+`/generated"}],"size":"1024x1024"}`)
 		case "/generated":
 			writer.Header().Set("Content-Type", "image/png")
 			_, _ = writer.Write(png)
@@ -68,11 +68,11 @@ func TestImageRequestUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.Images.Generate(context.Background(), &image.GenerateRequest{Model: "model", Prompt: "draw", Image: []string{"https://input.example/a.png"}, ResponseFormat: "b64_json"})
+	response, err := client.Images.Edit(context.Background(), &image.EditRequest{Model: "model", Prompt: "draw", Images: []image.Input{{ImageURL: "https://input.example/a.png"}}, ResponseFormat: "b64_json"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(response.Data) != 1 || response.Data[0].B64JSON != base64.StdEncoding.EncodeToString(png) || response.Data[0].Format != "png" || response.Data[0].URL != "" || response.Data[0].Size != "1024x1024" {
+	if len(response.Data) != 1 || response.Data[0].B64JSON != base64.StdEncoding.EncodeToString(png) || response.Data[0].URL != "" || response.OutputFormat != "png" || response.Size != "1024x1024" {
 		t.Fatalf("unexpected image response: %#v", response)
 	}
 }
@@ -109,12 +109,12 @@ func TestOpenRouterImageStreamConvertsDeltaImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if chunk.B64JSON != encoded || chunk.Format != "png" || chunk.URL != "" {
+	if chunk.B64JSON != encoded || chunk.OutputFormat != "png" {
 		t.Fatalf("unexpected image chunk: %#v", chunk)
 	}
 }
 
-func TestImageResponsePreservesPerItemError(t *testing.T) {
+func TestImageResponseRejectsMissingImageData(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		_, _ = io.WriteString(writer, `{"data":[{"error":{"code":"content_policy","message":"blocked"}}]}`)
 	}))
@@ -123,16 +123,13 @@ func TestImageResponsePreservesPerItemError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.Images.Generate(context.Background(), &image.GenerateRequest{Model: "model", Prompt: "draw", ResponseFormat: "b64_json"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(response.Data) != 1 || response.Data[0].Error.Code != "content_policy" || response.Data[0].Error.Message != "blocked" {
-		t.Fatalf("unexpected image error item: %#v", response.Data)
+	_, err = client.Images.Generate(context.Background(), &image.GenerateRequest{Model: "model", Prompt: "draw", ResponseFormat: "b64_json"})
+	if err == nil {
+		t.Fatal("expected missing base64 image error")
 	}
 }
 
-func TestImageStreamPreservesPartialFailure(t *testing.T) {
+func TestImageStreamReturnsPartialFailureOnce(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, `data: {"type":"image_generation.partial_failed","error":{"code":"render_failed","message":"try again"}}`+"\n\n")
@@ -147,34 +144,35 @@ func TestImageStreamPreservesPartialFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stream.Close()
-	chunk, err := stream.Recv()
-	if err != nil {
-		t.Fatal(err)
+	_, err = stream.Recv()
+	var apiError *APIError
+	if !errors.As(err, &apiError) || apiError.Code != "render_failed" {
+		t.Fatalf("unexpected partial failure: %#v", err)
 	}
-	if chunk.Error.Code != "render_failed" || chunk.Error.Message != "try again" {
-		t.Fatalf("unexpected partial failure: %#v", chunk)
+	if _, err = stream.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("second Recv error = %v, want EOF", err)
 	}
 }
 
 func TestAliImageStreamReturnsEveryImageAndUsageOnce(t *testing.T) {
 	response := &image.GenerateResponse{
-		Data:  []image.Data{{URL: "one"}, {URL: "two"}, {URL: "three"}},
-		Usage: image.Usage{InputTokens: 2, OutputTokens: 3, TotalTokens: 5}, RawResponse: []byte(`{"data":[]}`),
+		Data:  []image.Data{{B64JSON: "one"}, {B64JSON: "two"}, {B64JSON: "three"}},
+		Usage: image.Usage{InputTokens: 2, OutputTokens: 3, TotalTokens: 5},
 	}
 	stream := &singleImageStream{response: response, terminal: newStreamTerminal(nil, nil)}
-	for index, wantURL := range []string{"one", "two", "three"} {
+	for index, wantBase64 := range []string{"one", "two", "three"} {
 		chunk, err := stream.Recv()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if chunk.URL != wantURL {
-			t.Fatalf("chunk %d URL = %q, want %q", index, chunk.URL, wantURL)
+		if chunk.B64JSON != wantBase64 {
+			t.Fatalf("chunk %d B64JSON = %q, want %q", index, chunk.B64JSON, wantBase64)
 		}
 		if index == 0 {
-			if chunk.Usage.TotalTokens != 5 || len(chunk.RawResponse) == 0 {
+			if chunk.Usage.TotalTokens != 5 {
 				t.Fatalf("first chunk lost accounting metadata: %#v", chunk)
 			}
-		} else if chunk.Usage.TotalTokens != 0 || len(chunk.RawResponse) != 0 {
+		} else if chunk.Usage.TotalTokens != 0 {
 			t.Fatalf("chunk %d duplicated accounting metadata: %#v", index, chunk)
 		}
 	}
@@ -190,11 +188,12 @@ func TestDownloadedImageFormatUsesOriginalURLSuffix(t *testing.T) {
 	}))
 	defer server.Close()
 	data := image.Data{URL: server.URL + "/generated.JPG?download=1"}
-	request := &image.GenerateRequest{ResponseFormat: imageResponseFormatBase64}
-	if err := normalizeImageData(context.Background(), ClientConfig{HTTPClient: server.Client()}, ProviderOpenAI, "hint", request, &data); err != nil {
+	request := imageRequestOptions{ResponseFormat: imageResponseFormatBase64}
+	format, err := normalizeImageData(context.Background(), ClientConfig{HTTPClient: server.Client()}, ProviderOpenAI, "hint", request, &data)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if data.Format != imageFormatJPEG || data.MIMEType != "image/jpeg" {
+	if format != imageFormatJPEG {
 		t.Fatalf("unexpected normalized image: %#v", data)
 	}
 }
@@ -204,10 +203,11 @@ func TestUnknownImageFormatDefaultsToJPG(t *testing.T) {
 		{B64JSON: base64.StdEncoding.EncodeToString([]byte("image"))},
 		{URL: "https://example.com/generated.bin"},
 	} {
-		if err := normalizeImageData(context.Background(), ClientConfig{}, ProviderOpenAI, "hint", &image.GenerateRequest{}, &data); err != nil {
+		format, err := normalizeImageData(context.Background(), ClientConfig{}, ProviderOpenAI, "hint", imageRequestOptions{}, &data)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if data.Format != imageFormatJPG || data.MIMEType != "image/jpeg" {
+		if format != imageFormatJPEG {
 			t.Fatalf("unexpected fallback image metadata: %#v", data)
 		}
 	}

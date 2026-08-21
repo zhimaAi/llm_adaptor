@@ -102,19 +102,35 @@ type ToolCall struct {
 }
 
 type Message struct {
-	Role             Role            `json:"role"`
-	Content          MessageContent  `json:"content"`
-	Name             string          `json:"name,omitempty"`
-	ToolCalls        []ToolCall      `json:"tool_calls,omitempty"`
-	ToolCallID       string          `json:"tool_call_id,omitempty"`
-	ReasoningContent string          `json:"reasoning_content,omitempty"`
-	Refusal          string          `json:"refusal,omitempty"`
-	Images           []ResponseImage `json:"images,omitempty"`
+	Role             Role           `json:"role"`
+	Content          MessageContent `json:"content"`
+	Name             string         `json:"name,omitempty"`
+	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
+	FunctionCall     *FunctionCall  `json:"function_call,omitempty"`
+	ToolCallID       string         `json:"tool_call_id,omitempty"`
+	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	Refusal          string         `json:"refusal,omitempty"`
+	Audio            *Audio         `json:"audio,omitempty"`
+	Annotations      []Annotation   `json:"annotations,omitempty"`
 }
 
-type ResponseImage struct {
-	Type     string    `json:"type"`
-	ImageURL *ImageURL `json:"image_url,omitempty"`
+type Audio struct {
+	ID         string `json:"id"`
+	Data       string `json:"data,omitempty"`
+	ExpiresAt  int64  `json:"expires_at,omitempty"`
+	Transcript string `json:"transcript,omitempty"`
+}
+
+type Annotation struct {
+	Type        string       `json:"type"`
+	URLCitation *URLCitation `json:"url_citation,omitempty"`
+}
+
+type URLCitation struct {
+	StartIndex int    `json:"start_index"`
+	EndIndex   int    `json:"end_index"`
+	URL        string `json:"url"`
+	Title      string `json:"title"`
 }
 
 type FunctionDefinition struct {
@@ -148,33 +164,27 @@ const (
 	ReasoningEffortMedium  ReasoningEffort = "medium"
 	ReasoningEffortHigh    ReasoningEffort = "high"
 	ReasoningEffortXHigh   ReasoningEffort = "xhigh"
+	ReasoningEffortMax     ReasoningEffort = "max"
 )
 
 type CreateRequest struct {
 	Model               string          `json:"model"`
 	Messages            []Message       `json:"messages"`
 	FrequencyPenalty    *float64        `json:"frequency_penalty,omitempty"`
-	LogitBias           map[string]int  `json:"logit_bias,omitempty"`
-	LogProbs            *bool           `json:"logprobs,omitempty"`
-	TopLogProbs         *int            `json:"top_logprobs,omitempty"`
 	MaxTokens           *int            `json:"max_tokens,omitempty"`
 	MaxCompletionTokens *int            `json:"max_completion_tokens,omitempty"`
-	Modalities          []string        `json:"modalities,omitempty"`
 	N                   *int            `json:"n,omitempty"`
 	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"`
 	PresencePenalty     *float64        `json:"presence_penalty,omitempty"`
 	ReasoningEffort     ReasoningEffort `json:"reasoning_effort,omitempty"`
 	ResponseFormat      *ResponseFormat `json:"response_format,omitempty"`
 	Seed                *int64          `json:"seed,omitempty"`
-	ServiceTier         string          `json:"service_tier,omitempty"`
 	Stop                []string        `json:"stop,omitempty"`
-	Store               *bool           `json:"store,omitempty"`
 	Temperature         *float64        `json:"temperature,omitempty"`
 	ToolChoice          any             `json:"tool_choice,omitempty"`
 	Tools               []Tool          `json:"tools,omitempty"`
 	TopP                *float64        `json:"top_p,omitempty"`
 	User                string          `json:"user,omitempty"`
-	Metadata            map[string]any  `json:"metadata,omitempty"`
 	ExtraBody           map[string]any  `json:"-"`
 }
 
@@ -183,57 +193,78 @@ type StreamRequest struct {
 	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
 }
 
-type TokenDetails struct {
-	CachedTokens    int `json:"cached_tokens,omitempty"`
-	ReasoningTokens int `json:"reasoning_tokens,omitempty"`
+type PromptTokensDetails struct {
+	AudioTokens  int `json:"audio_tokens,omitempty"`
+	CachedTokens int `json:"cached_tokens,omitempty"`
+}
+
+type CompletionTokensDetails struct {
+	AcceptedPredictionTokens int `json:"accepted_prediction_tokens,omitempty"`
+	AudioTokens              int `json:"audio_tokens,omitempty"`
+	ReasoningTokens          int `json:"reasoning_tokens,omitempty"`
+	RejectedPredictionTokens int `json:"rejected_prediction_tokens,omitempty"`
 }
 
 type Usage struct {
-	PromptTokens           int          `json:"prompt_tokens"`
-	CompletionTokens       int          `json:"completion_tokens"`
-	TotalTokens            int          `json:"total_tokens"`
-	PromptTokensDetails    TokenDetails `json:"prompt_tokens_details,omitempty"`
-	CompletionTokenDetails TokenDetails `json:"completion_tokens_details,omitempty"`
+	PromptTokens            int                     `json:"prompt_tokens"`
+	CompletionTokens        int                     `json:"completion_tokens"`
+	TotalTokens             int                     `json:"total_tokens"`
+	PromptTokensDetails     PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type TopLogProb struct {
+	Token   string  `json:"token"`
+	LogProb float64 `json:"logprob"`
+	Bytes   []int   `json:"bytes,omitempty"`
+}
+
+type TokenLogProb struct {
+	Token       string       `json:"token"`
+	LogProb     float64      `json:"logprob"`
+	Bytes       []int        `json:"bytes,omitempty"`
+	TopLogProbs []TopLogProb `json:"top_logprobs,omitempty"`
+}
+
+type LogProbs struct {
+	Content []TokenLogProb `json:"content,omitempty"`
+	Refusal []TokenLogProb `json:"refusal,omitempty"`
 }
 
 type Choice struct {
-	Index        int     `json:"index"`
-	Message      Message `json:"message"`
-	FinishReason string  `json:"finish_reason,omitempty"`
-	LogProbs     any     `json:"logprobs,omitempty"`
+	Index        int       `json:"index"`
+	Message      Message   `json:"message"`
+	FinishReason string    `json:"finish_reason,omitempty"`
+	LogProbs     *LogProbs `json:"logprobs,omitempty"`
 }
 
 type CreateResponse struct {
-	ID                string                     `json:"id"`
-	Object            string                     `json:"object"`
-	Created           int64                      `json:"created"`
-	Model             string                     `json:"model"`
-	SystemFingerprint string                     `json:"system_fingerprint,omitempty"`
-	ServiceTier       string                     `json:"service_tier,omitempty"`
-	Choices           []Choice                   `json:"choices"`
-	Usage             Usage                      `json:"usage"`
-	ExtraFields       map[string]json.RawMessage `json:"-"`
-	RawResponse       json.RawMessage            `json:"-"`
+	ID                string   `json:"id"`
+	Object            string   `json:"object"`
+	Created           int64    `json:"created"`
+	Model             string   `json:"model"`
+	SystemFingerprint string   `json:"system_fingerprint,omitempty"`
+	ServiceTier       string   `json:"service_tier,omitempty"`
+	Choices           []Choice `json:"choices"`
+	Usage             Usage    `json:"usage"`
 }
 
 type ChunkChoice struct {
-	Index        int     `json:"index"`
-	Delta        Message `json:"delta"`
-	FinishReason string  `json:"finish_reason,omitempty"`
-	LogProbs     any     `json:"logprobs,omitempty"`
+	Index        int       `json:"index"`
+	Delta        Message   `json:"delta"`
+	FinishReason string    `json:"finish_reason,omitempty"`
+	LogProbs     *LogProbs `json:"logprobs,omitempty"`
 }
 
 type StreamChunk struct {
-	ID                string                     `json:"id"`
-	Object            string                     `json:"object"`
-	Created           int64                      `json:"created"`
-	Model             string                     `json:"model"`
-	SystemFingerprint string                     `json:"system_fingerprint,omitempty"`
-	ServiceTier       string                     `json:"service_tier,omitempty"`
-	Choices           []ChunkChoice              `json:"choices"`
-	Usage             *Usage                     `json:"usage,omitempty"`
-	ExtraFields       map[string]json.RawMessage `json:"-"`
-	RawResponse       json.RawMessage            `json:"-"`
+	ID                string        `json:"id"`
+	Object            string        `json:"object"`
+	Created           int64         `json:"created"`
+	Model             string        `json:"model"`
+	SystemFingerprint string        `json:"system_fingerprint,omitempty"`
+	ServiceTier       string        `json:"service_tier,omitempty"`
+	Choices           []ChunkChoice `json:"choices"`
+	Usage             *Usage        `json:"usage,omitempty"`
 }
 
 type Stream interface {

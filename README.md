@@ -1,12 +1,22 @@
 # llm_adaptor v2
 
-Go 语言多模型服务商适配包。v2 使用 OpenAI Chat Completions 作为主要统一契约，并将 Chat、Embedding、Rerank、Image 与 MiniMax Speech 作为一级能力。
+Go 语言多模型服务商适配包。v2 将调用方可见的请求和响应收敛为五类稳定公共契约，供应商私有字段只在适配器内部转换。
+
+| 能力 | 公共协议模板 |
+|---|---|
+| Chat | OpenAI Chat Completions，额外保留 `StreamOptions`、`ReasoningContent` 和 `<think>...</think>` 兼容 |
+| Embedding | OpenAI Embeddings |
+| Image | OpenAI Images Generate / Edit |
+| Rerank | Cohere Rerank v2 核心协议 |
+| Speech | MiniMax T2A 与音色管理协议 |
 
 ## 安装
 
 ```bash
-go get github.com/zhimaAi/llm_adaptor/v2
+go get github.com/zhimaAi/llm_adaptor/v2@<commit>
 ```
+
+本模块不再发布 Git tag。调用方使用目标 commit 对应的 Go pseudo-version 更新依赖。
 
 ## 创建客户端
 
@@ -51,7 +61,71 @@ resp, err := client.Chat.Create(ctx, &chat.CreateRequest{
 })
 ```
 
-流式调用使用 `client.Chat.Stream`，返回的 chunk 可交给 `chat.Accumulator` 聚合。没有原生 reasoning 字段时，v2 会兼容抽取 `<think>...</think>`。
+公共常用请求字段包括模型、消息、采样参数、token 上限、停止词、工具、结构化输出、`ReasoningEffort` 和 `StreamOptions`。流式调用使用 `client.Chat.Stream`，返回的 chunk 可交给 `chat.Accumulator` 聚合。`StreamOptions` 未配置时默认请求 usage，只有显式设置 `IncludeUsage=false` 才关闭。
+
+响应完整保留 OpenAI Chat Completions 的 ID、对象类型、模型、choices、工具调用、音频、引用、logprobs、usage、service tier 和 system fingerprint。`ReasoningContent` 是标准化兼容字段：供应商有原生 reasoning 时优先使用，否则从完整或跨 chunk 的 `<think>...</think>` 中抽取。
+
+## Embedding
+
+请求字段为 `Model`、`Input`、`EncodingFormat`、`Dimensions` 和 `User`。响应遵循 OpenAI Embeddings 的 `Object`、`Data`、`Model` 和 `Usage`。
+
+`Data.Embedding` 能原样保存浮点数组或 Base64 字符串；需要数值向量时显式调用：
+
+```go
+values, err := resp.Data[0].Embedding.Float64s()
+```
+
+Base64 按小端 `float32` 解码并转换为 `[]float64`。
+
+## Image
+
+纯文本生图使用 Generate：
+
+```go
+resp, err := client.Images.Generate(ctx, &image.GenerateRequest{
+    Model:          "gpt-image-1.5",
+    Prompt:         "一只在窗边晒太阳的橘猫",
+    ResponseFormat: "b64_json",
+    OutputFormat:   "png",
+})
+```
+
+带参考图的编辑使用 Edit，不能把图片塞进 Generate 或 `ExtraBody`：
+
+```go
+resp, err := client.Images.Edit(ctx, &image.EditRequest{
+    Model:  "gpt-image-1.5",
+    Prompt: "将背景替换为雪山",
+    Images: []image.Input{
+        {ImageURL: "data:image/png;base64,..."},
+    },
+})
+```
+
+Generate/Edit 分别提供 `Stream`/`EditStream`。响应完整保留 OpenAI Images 的 `Created`、`Background`、`Data`、`OutputFormat`、`Quality`、`Size` 和 token usage。请求 `b64_json` 而供应商只返回 URL 时，适配器会使用调用 Context 下载并转换；无法识别格式时，`OutputFormat` 为 `jpeg`。
+
+## Rerank
+
+公共请求只包含 Cohere v2 核心字段：`Model`、`Query`、`Documents []string` 和 `TopN`。响应包含 `ID`、`Results` 及完整 `Meta`；结果不携带文档副本，调用方通过 `Result.Index` 关联原始文档。
+
+```go
+resp, err := client.Rerank.Create(ctx, &rerank.CreateRequest{
+    Model:     "rerank-v3.5",
+    Query:     "退款需要多久",
+    Documents: []string{"退款将在三天内到账", "如何修改头像"},
+})
+```
+
+阿里、BAAI、Cohere、Jina、SiliconFlow 和 Xinference 的私有字段与响应均在 Provider 内部转换。
+
+## ExtraBody
+
+五类 JSON 请求均保留 `ExtraBody map[string]any`，用于尚未纳入公共常用字段的高级参数。适配器先构造供应商内部请求，再注入 ExtraBody：
+
+- 与公共字段、鉴权字段、`stream` 或适配器生成的 thinking 字段冲突时返回 `ErrInvalidRequest`。
+- ExtraBody 不能覆盖 `enable_thinking`、`think`、`thinking`、`reasoning` 或 `reasoning_split`。
+- 请求、slice、map 和 ExtraBody 均不会被适配器修改。
+- 非冲突字段原样发送；供应商不接受时返回供应商 API 错误。
 
 ## MiniMax Speech
 
@@ -73,7 +147,7 @@ resp, err := client.Speech.Create(ctx, &speech.CreateRequest{
 })
 ```
 
-`client.Speech.Stream` 使用 MiniMax HTTP T2A 流式协议。MiniMax 音色管理通过 `client.Speech.ListVoices`、`UploadVoiceFile` 和 `CloneVoice` 调用，并与 T2A 一样按请求从 APIKey 池中随机选择 Key。完整的上传并克隆流程应使用 `CloneVoiceFromFiles`，它会固定同一个 Key，避免账号级 `file_id` 在后续克隆请求中失效。v2 不提供语音转写、语音翻译、WebSocket T2A 或异步长文本。
+`client.Speech.Stream` 使用 MiniMax HTTP T2A 流式协议。MiniMax 音色管理通过 `client.Speech.ListVoices`、`UploadVoiceFile` 和 `CloneVoice` 调用，并与 T2A 一样按请求从 APIKey 池中随机选择 Key。完整的上传并克隆流程应使用 `CloneVoiceFromFiles`，它会固定同一个 Key，避免账号级 `file_id` 在后续克隆请求中失效。Speech 请求和响应直接覆盖 MiniMax 官方字段，包括 `aigc_watermark`、克隆校验参数、`TraceID`、`BaseResponse` 和 `ExtraInfo`。v2 不提供语音转写、语音翻译、WebSocket T2A 或异步长文本。
 
 ## 能力说明
 

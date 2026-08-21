@@ -3,7 +3,10 @@
 package llm
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -12,7 +15,39 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/image"
 )
 
+var openRouterImageReservedRequestKeys = map[string]struct{}{
+	"modalities": {}, "image_config": {},
+}
+
 type openRouterProvider struct{ *openAICompatibleProvider }
+
+type openRouterGeneratedImage struct {
+	Type     string `json:"type,omitempty"`
+	ImageURL struct {
+		URL string `json:"url"`
+	} `json:"image_url"`
+}
+
+type openRouterImageResponse struct {
+	ID      string `json:"id,omitempty"`
+	Created int64  `json:"created,omitempty"`
+	Choices []struct {
+		Message struct {
+			Images []openRouterGeneratedImage `json:"images,omitempty"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage chat.Usage `json:"usage,omitempty"`
+}
+
+type openRouterImageStreamResponse struct {
+	Created int64 `json:"created,omitempty"`
+	Choices []struct {
+		Delta struct {
+			Images []openRouterGeneratedImage `json:"images,omitempty"`
+		} `json:"delta"`
+	} `json:"choices"`
+	Usage *chat.Usage `json:"usage,omitempty"`
+}
 
 func openRouterImageContent(prompt string, images []string) chat.MessageContent {
 	if len(images) == 0 {
@@ -32,76 +67,148 @@ func newOpenRouterProvider(config ClientConfig) *openRouterProvider {
 }
 
 func (p *openRouterProvider) generateImage(ctx context.Context, selected credential, request *image.GenerateRequest) (*image.GenerateResponse, error) {
-	if request == nil || request.Model == "" || strings.TrimSpace(request.Prompt) == "" {
-		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
+	if request == nil {
+		return nil, fmt.Errorf("%w: image request is nil", ErrInvalidRequest)
 	}
-	extra := make(map[string]any, len(request.ExtraBody)+1)
-	for key, value := range request.ExtraBody {
-		extra[key] = value
+	return p.createOpenRouterImage(ctx, selected, request.Model, request.Prompt, nil, request.N, request.Quality, request.Size, request.User, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
+}
+
+func (p *openRouterProvider) editImage(ctx context.Context, selected credential, request *image.EditRequest) (*image.GenerateResponse, error) {
+	if request == nil || len(request.Images) == 0 {
+		return nil, fmt.Errorf("%w: image edit request and images are required", ErrInvalidRequest)
 	}
-	imageConfig := map[string]any{}
-	if request.Size != "" {
-		imageConfig["image_size"] = request.Size
+	if request.Mask != nil {
+		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "mask"}
 	}
-	if len(imageConfig) > 0 {
-		extra["image_config"] = imageConfig
-	}
-	chatResponse, err := p.createChat(ctx, selected, &chat.CreateRequest{
-		Model: request.Model, Messages: []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(request.Prompt, request.Image)}},
-		Modalities: []string{"image", "text"}, ExtraBody: extra,
-	})
+	images, err := openRouterInputImages(request.Images)
 	if err != nil {
 		return nil, err
 	}
-	result := &image.GenerateResponse{RawResponse: chatResponse.RawResponse}
-	for _, choice := range chatResponse.Choices {
+	return p.createOpenRouterImage(ctx, selected, request.Model, request.Prompt, images, request.N, request.Quality, request.Size, request.User, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
+}
+
+func (p *openRouterProvider) createOpenRouterImage(ctx context.Context, selected credential, model, prompt string, images []string, n *int, quality, size, user, responseFormat, outputFormat string, extraBody map[string]any) (*image.GenerateResponse, error) {
+	body, err := buildOpenRouterImageBody(model, prompt, images, n, quality, size, user, extraBody, false)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := p.doJSON(ctx, selected, ChatCompletionsPath, body)
+	if err != nil {
+		return nil, err
+	}
+	var source openRouterImageResponse
+	if err := json.Unmarshal(raw, &source); err != nil {
+		return nil, err
+	}
+	result := &image.GenerateResponse{Created: source.Created, Quality: quality, Size: size, OutputFormat: outputFormat}
+	for _, choice := range source.Choices {
 		for _, generated := range choice.Message.Images {
-			if generated.ImageURL == nil {
-				continue
+			if generated.ImageURL.URL != "" {
+				result.Data = append(result.Data, image.Data{URL: generated.ImageURL.URL})
 			}
-			result.Data = append(result.Data, image.Data{URL: generated.ImageURL.URL})
 		}
 	}
-	result.Usage.InputTokens = chatResponse.Usage.PromptTokens
-	result.Usage.OutputTokens = chatResponse.Usage.CompletionTokens
-	result.Usage.TotalTokens = chatResponse.Usage.TotalTokens
-	if err := normalizeImageResponse(ctx, p.config, ProviderOpenRouter, selected.hint, request, result); err != nil {
+	result.Usage.InputTokens = source.Usage.PromptTokens
+	result.Usage.OutputTokens = source.Usage.CompletionTokens
+	result.Usage.TotalTokens = source.Usage.TotalTokens
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("%w: OpenRouter response contains no images", ErrInvalidRequest)
+	}
+	if err := normalizeImageResponse(ctx, p.config, ProviderOpenRouter, selected.hint, imageRequestOptions{ResponseFormat: responseFormat, OutputFormat: outputFormat}, result); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 func (p *openRouterProvider) streamImage(ctx context.Context, selected credential, request *image.StreamRequest) (image.Stream, error) {
-	if request == nil || request.Model == "" || strings.TrimSpace(request.Prompt) == "" {
-		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
+	if request == nil {
+		return nil, fmt.Errorf("%w: image request is nil", ErrInvalidRequest)
 	}
-	extra := make(map[string]any, len(request.ExtraBody)+1)
-	for key, value := range request.ExtraBody {
-		extra[key] = value
+	return p.createOpenRouterImageStream(ctx, selected, request.Model, request.Prompt, nil, request.N, request.Quality, request.Size, request.User, request.OutputFormat, request.ExtraBody)
+}
+
+func (p *openRouterProvider) streamImageEdit(ctx context.Context, selected credential, request *image.EditStreamRequest) (image.Stream, error) {
+	if request == nil || len(request.Images) == 0 {
+		return nil, fmt.Errorf("%w: image edit request and images are required", ErrInvalidRequest)
 	}
-	if request.Size != "" {
-		extra["image_config"] = map[string]any{"image_size": request.Size}
+	if request.Mask != nil {
+		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "mask"}
 	}
-	stream, err := p.streamChat(ctx, selected, &chat.StreamRequest{CreateRequest: chat.CreateRequest{
-		Model: request.Model, Messages: []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(request.Prompt, request.Image)}},
-		Modalities: []string{"image", "text"}, ExtraBody: extra,
-	}})
+	images, err := openRouterInputImages(request.Images)
 	if err != nil {
 		return nil, err
 	}
+	return p.createOpenRouterImageStream(ctx, selected, request.Model, request.Prompt, images, request.N, request.Quality, request.Size, request.User, request.OutputFormat, request.ExtraBody)
+}
+
+func (p *openRouterProvider) createOpenRouterImageStream(ctx context.Context, selected credential, model, prompt string, images []string, n *int, quality, size, user, outputFormat string, extraBody map[string]any) (image.Stream, error) {
+	body, err := buildOpenRouterImageBody(model, prompt, images, n, quality, size, user, extraBody, true)
+	if err != nil {
+		return nil, err
+	}
+	streamContext, cancel := context.WithCancel(ctx)
+	response, err := p.doStream(streamContext, selected, ChatCompletionsPath, body)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
 	return &openRouterImageStream{
-		ctx: ctx, stream: stream, terminal: newStreamTerminal(nil, stream.Close),
-		config: p.config, selected: selected, request: request.GenerateRequest,
+		ctx: streamContext, scanner: scanner, terminal: newStreamTerminal(cancel, response.Body.Close),
+		config: p.config, selected: selected, request: imageRequestOptions{ResponseFormat: imageResponseFormatBase64, OutputFormat: outputFormat},
+		quality: quality, size: size,
 	}, nil
+}
+
+func buildOpenRouterImageBody(model, prompt string, images []string, n *int, quality, size, user string, extraBody map[string]any, stream bool) (map[string]any, error) {
+	if strings.TrimSpace(model) == "" || strings.TrimSpace(prompt) == "" {
+		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
+	}
+	if n != nil && *n != 1 {
+		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "n"}
+	}
+	if quality != "" {
+		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "quality"}
+	}
+	if user != "" {
+		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "user"}
+	}
+	chatRequest := &chat.CreateRequest{
+		Model:    model,
+		Messages: []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(prompt, images)}},
+	}
+	body, err := buildOpenAIChatRequest(ProviderOpenRouter, chatRequest, stream, nil)
+	if err != nil {
+		return nil, err
+	}
+	body["modalities"] = []string{"image", "text"}
+	if size != "" {
+		body["image_config"] = map[string]any{"image_size": size}
+	}
+	return mergeExtraBody(body, extraBody, imageGenerateReservedRequestKeys, imageEditReservedRequestKeys, openRouterImageReservedRequestKeys)
+}
+
+func openRouterInputImages(inputs []image.Input) ([]string, error) {
+	result := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		if input.FileID != "" || strings.TrimSpace(input.ImageURL) == "" {
+			return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "images.file_id"}
+		}
+		result = append(result, input.ImageURL)
+	}
+	return result, nil
 }
 
 type openRouterImageStream struct {
 	ctx      context.Context
-	stream   chat.Stream
+	scanner  *bufio.Scanner
 	terminal *streamTerminal
 	config   ClientConfig
 	selected credential
-	request  image.GenerateRequest
+	request  imageRequestOptions
+	quality  string
+	size     string
 	pending  []*image.StreamChunk
 }
 
@@ -114,41 +221,68 @@ func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
 		s.pending = s.pending[1:]
 		return chunk, nil
 	}
-	for {
-		chunk, err := s.stream.Recv()
-		if err != nil {
-			if err == io.EOF {
-				s.terminal.finish()
-				return nil, io.EOF
-			}
+	for s.scanner.Scan() {
+		line := bytes.TrimSpace(s.scanner.Bytes())
+		if len(line) == 0 || bytes.HasPrefix(line, []byte(":")) {
+			continue
+		}
+		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		if bytes.Equal(line, []byte("[DONE]")) {
+			s.terminal.finish()
+			return nil, io.EOF
+		}
+		if err := decodeStreamAPIError(ProviderOpenRouter, s.selected.hint, line); err != nil {
+			return nil, s.terminal.fail(s.ctx, err)
+		}
+		var wire openRouterImageStreamResponse
+		if err := json.Unmarshal(line, &wire); err != nil {
 			return nil, s.terminal.fail(s.ctx, err)
 		}
 		usage := image.Usage{}
-		if chunk.Usage != nil {
-			usage.InputTokens = chunk.Usage.PromptTokens
-			usage.OutputTokens = chunk.Usage.CompletionTokens
-			usage.TotalTokens = chunk.Usage.TotalTokens
+		if wire.Usage != nil {
+			usage.InputTokens = wire.Usage.PromptTokens
+			usage.OutputTokens = wire.Usage.CompletionTokens
+			usage.TotalTokens = wire.Usage.TotalTokens
 		}
-		for _, choice := range chunk.Choices {
+		for _, choice := range wire.Choices {
 			for _, generated := range choice.Delta.Images {
-				if generated.ImageURL == nil {
+				if generated.ImageURL.URL == "" {
 					continue
 				}
-				response := &image.GenerateResponse{Data: []image.Data{{URL: generated.ImageURL.URL}}}
-				if err := normalizeImageResponse(s.ctx, s.config, ProviderOpenRouter, s.selected.hint, &s.request, response); err != nil {
+				data := image.Data{URL: generated.ImageURL.URL}
+				format, err := normalizeImageData(s.ctx, s.config, ProviderOpenRouter, s.selected.hint, s.request, &data)
+				if err != nil {
 					return nil, s.terminal.fail(s.ctx, err)
 				}
-				item := response.Data[0]
-				s.pending = append(s.pending, &image.StreamChunk{URL: item.URL, B64JSON: item.B64JSON, Format: item.Format, MIMEType: item.MIMEType, Usage: usage, RawResponse: chunk.RawResponse})
+				s.pending = append(s.pending, &image.StreamChunk{
+					B64JSON: data.B64JSON, PartialImageIndex: len(s.pending), Created: wire.Created,
+					OutputFormat: format, Quality: s.quality, Size: s.size,
+				})
 			}
 		}
-		if len(s.pending) > 0 {
-			return s.Recv()
+		if wire.Usage != nil {
+			if len(s.pending) == 0 {
+				s.pending = append(s.pending, &image.StreamChunk{Created: wire.Created, OutputFormat: normalizeImageFormat(s.request.OutputFormat), Quality: s.quality, Size: s.size})
+			}
+			s.pending[0].Usage = usage
 		}
-		if chunk.Usage != nil {
-			return &image.StreamChunk{Usage: usage, RawResponse: chunk.RawResponse}, nil
+		if len(s.pending) > 0 {
+			chunk := s.pending[0]
+			s.pending = s.pending[1:]
+			return chunk, nil
 		}
 	}
+	if err := s.scanner.Err(); err != nil {
+		return nil, s.terminal.fail(s.ctx, err)
+	}
+	if s.terminal.isDone() {
+		return nil, io.EOF
+	}
+	if s.ctx != nil && s.ctx.Err() != nil {
+		return nil, s.terminal.fail(s.ctx, s.ctx.Err())
+	}
+	s.terminal.finish()
+	return nil, io.EOF
 }
 
 func (s *openRouterImageStream) Close() error {
@@ -157,4 +291,6 @@ func (s *openRouterImageStream) Close() error {
 
 var _ imageProvider = (*openRouterProvider)(nil)
 var _ imageStreamProvider = (*openRouterProvider)(nil)
+var _ imageEditProvider = (*openRouterProvider)(nil)
+var _ imageEditStreamProvider = (*openRouterProvider)(nil)
 var _ image.Stream = (*openRouterImageStream)(nil)

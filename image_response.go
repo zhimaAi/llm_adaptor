@@ -23,51 +23,63 @@ const (
 	imageFormatJPEG           = "jpeg"
 )
 
-func normalizeImageResponse(ctx context.Context, config ClientConfig, provider Provider, hint string, request *image.GenerateRequest, response *image.GenerateResponse) error {
+type imageRequestOptions struct {
+	ResponseFormat string
+	OutputFormat   string
+}
+
+func normalizeImageResponse(ctx context.Context, config ClientConfig, provider Provider, hint string, request imageRequestOptions, response *image.GenerateResponse) error {
+	if response == nil || len(response.Data) == 0 {
+		return fmt.Errorf("%w: image response contains no data", ErrInvalidRequest)
+	}
+	format := normalizeImageFormat(response.OutputFormat)
 	for index := range response.Data {
-		if err := normalizeImageData(ctx, config, provider, hint, request, &response.Data[index]); err != nil {
+		itemFormat, err := normalizeImageData(ctx, config, provider, hint, request, &response.Data[index])
+		if err != nil {
 			return err
 		}
+		if format == "" {
+			format = itemFormat
+		}
 	}
+	if format == "" {
+		format = imageFormatJPEG
+	}
+	response.OutputFormat = format
 	return nil
 }
 
-func normalizeImageData(ctx context.Context, config ClientConfig, provider Provider, hint string, request *image.GenerateRequest, data *image.Data) error {
-	if data.Error.Code != "" || data.Error.Message != "" {
-		return nil
-	}
+func normalizeImageData(ctx context.Context, config ClientConfig, provider Provider, hint string, request imageRequestOptions, data *image.Data) (string, error) {
 	originalURL := data.URL
+	mimeType := ""
 	if strings.HasPrefix(data.URL, "data:") {
-		mimeType, encoded, err := parseImageDataURL(data.URL)
+		parsedMIMEType, encoded, err := parseImageDataURL(data.URL)
 		if err != nil {
-			return err
+			return "", err
 		}
-		data.MIMEType, data.B64JSON, data.URL = mimeType, encoded, ""
+		mimeType, data.B64JSON, data.URL = parsedMIMEType, encoded, ""
 	}
 	if request.ResponseFormat == imageResponseFormatBase64 && data.B64JSON == "" && data.URL != "" {
-		payload, mimeType, err := downloadImage(ctx, config.HTTPClient, provider, hint, data.URL)
+		payload, downloadedMIMEType, err := downloadImage(ctx, config.HTTPClient, provider, hint, data.URL)
 		if err != nil {
-			return err
+			return "", err
 		}
 		data.B64JSON = base64.StdEncoding.EncodeToString(payload)
-		data.MIMEType, data.URL = mimeType, ""
+		mimeType, data.URL = downloadedMIMEType, ""
 	}
 	if data.B64JSON != "" {
 		if _, err := base64.StdEncoding.DecodeString(data.B64JSON); err != nil {
-			return fmt.Errorf("%w: invalid base64 image: %v", ErrInvalidRequest, err)
+			return "", fmt.Errorf("%w: invalid base64 image: %v", ErrInvalidRequest, err)
 		}
 	}
-	data.Format = imageFormat(data.MIMEType, originalURL, request.OutputFormat)
-	if data.Format == "" {
-		data.Format = imageFormatJPG
+	format := imageFormat(mimeType, originalURL, request.OutputFormat)
+	if format == "" {
+		format = imageFormatJPEG
 	}
-	if imageFormat(data.MIMEType, "", "") == "" {
-		data.MIMEType = imageMIMEType(data.Format)
+	if request.ResponseFormat == imageResponseFormatBase64 && data.B64JSON == "" {
+		return "", fmt.Errorf("%w: base64 image data is required", ErrInvalidRequest)
 	}
-	if request.ResponseFormat == imageResponseFormatBase64 && (data.B64JSON == "" || data.Format == "") {
-		return fmt.Errorf("%w: base64 image data and format are required", ErrInvalidRequest)
-	}
-	return nil
+	return format, nil
 }
 
 func parseImageDataURL(value string) (string, string, error) {

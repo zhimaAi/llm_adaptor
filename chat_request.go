@@ -4,6 +4,7 @@ package llm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -20,11 +21,11 @@ const (
 )
 
 var chatReservedRequestKeys = map[string]struct{}{
-	"model": {}, "messages": {}, "frequency_penalty": {}, "logit_bias": {}, "logprobs": {},
-	"top_logprobs": {}, "max_tokens": {}, "max_completion_tokens": {}, "modalities": {}, "n": {},
+	"model": {}, "messages": {}, "frequency_penalty": {},
+	"max_tokens": {}, "max_completion_tokens": {}, "n": {},
 	"parallel_tool_calls": {}, "presence_penalty": {}, "reasoning_effort": {}, "response_format": {},
-	"seed": {}, "service_tier": {}, "stop": {}, "store": {}, "temperature": {}, "tool_choice": {},
-	"tools": {}, "top_p": {}, "user": {}, "metadata": {}, "stream": {}, "stream_options": {},
+	"seed": {}, "stop": {}, "temperature": {}, "tool_choice": {},
+	"tools": {}, "top_p": {}, "user": {}, "stream": {}, "stream_options": {},
 	"enable_thinking": {}, "think": {}, "thinking": {}, "reasoning": {}, "reasoning_split": {},
 }
 
@@ -47,32 +48,83 @@ var claudeDefaultSamplingModelPrefixes = []string{
 }
 
 type openAIChatWireRequest struct {
-	Model               string               `json:"model"`
-	Messages            []chat.Message       `json:"messages"`
-	FrequencyPenalty    *float64             `json:"frequency_penalty,omitempty"`
-	LogitBias           map[string]int       `json:"logit_bias,omitempty"`
-	LogProbs            *bool                `json:"logprobs,omitempty"`
-	TopLogProbs         *int                 `json:"top_logprobs,omitempty"`
-	MaxTokens           *int                 `json:"max_tokens,omitempty"`
-	MaxCompletionTokens *int                 `json:"max_completion_tokens,omitempty"`
-	Modalities          []string             `json:"modalities,omitempty"`
-	N                   *int                 `json:"n,omitempty"`
-	ParallelToolCalls   *bool                `json:"parallel_tool_calls,omitempty"`
-	PresencePenalty     *float64             `json:"presence_penalty,omitempty"`
-	ReasoningEffort     chat.ReasoningEffort `json:"reasoning_effort,omitempty"`
-	ResponseFormat      *chat.ResponseFormat `json:"response_format,omitempty"`
-	Seed                *int64               `json:"seed,omitempty"`
-	ServiceTier         string               `json:"service_tier,omitempty"`
-	Stop                []string             `json:"stop,omitempty"`
-	Store               *bool                `json:"store,omitempty"`
-	Temperature         *float64             `json:"temperature,omitempty"`
-	ToolChoice          any                  `json:"tool_choice,omitempty"`
-	Tools               []chat.Tool          `json:"tools,omitempty"`
-	TopP                *float64             `json:"top_p,omitempty"`
-	User                string               `json:"user,omitempty"`
-	Metadata            map[string]any       `json:"metadata,omitempty"`
-	Stream              bool                 `json:"stream"`
-	StreamOptions       *chat.StreamOptions  `json:"stream_options,omitempty"`
+	Model               string                    `json:"model"`
+	Messages            []openAIMessageWire       `json:"messages"`
+	FrequencyPenalty    *float64                  `json:"frequency_penalty,omitempty"`
+	MaxTokens           *int                      `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int                      `json:"max_completion_tokens,omitempty"`
+	N                   *int                      `json:"n,omitempty"`
+	ParallelToolCalls   *bool                     `json:"parallel_tool_calls,omitempty"`
+	PresencePenalty     *float64                  `json:"presence_penalty,omitempty"`
+	ReasoningEffort     string                    `json:"reasoning_effort,omitempty"`
+	ResponseFormat      *openAIResponseFormatWire `json:"response_format,omitempty"`
+	Seed                *int64                    `json:"seed,omitempty"`
+	Stop                []string                  `json:"stop,omitempty"`
+	Temperature         *float64                  `json:"temperature,omitempty"`
+	ToolChoice          any                       `json:"tool_choice,omitempty"`
+	Tools               []openAIToolWire          `json:"tools,omitempty"`
+	TopP                *float64                  `json:"top_p,omitempty"`
+	User                string                    `json:"user,omitempty"`
+	Stream              bool                      `json:"stream"`
+	StreamOptions       *chat.StreamOptions       `json:"stream_options,omitempty"`
+}
+
+type openAIMessageWire struct {
+	Role       string               `json:"role"`
+	Content    any                  `json:"content"`
+	Name       string               `json:"name,omitempty"`
+	ToolCalls  []openAIToolCallWire `json:"tool_calls,omitempty"`
+	ToolCallID string               `json:"tool_call_id,omitempty"`
+}
+
+type openAIContentPartWire struct {
+	Type       string                `json:"type"`
+	Text       string                `json:"text,omitempty"`
+	ImageURL   *openAIImageURLWire   `json:"image_url,omitempty"`
+	InputAudio *openAIInputAudioWire `json:"input_audio,omitempty"`
+	VideoURL   *openAIVideoURLWire   `json:"video_url,omitempty"`
+}
+
+type openAIImageURLWire struct {
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type openAIInputAudioWire struct {
+	Data   string `json:"data"`
+	Format string `json:"format"`
+}
+
+type openAIVideoURLWire struct {
+	URL string `json:"url"`
+}
+
+type openAIFunctionCallWire struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+}
+
+type openAIToolCallWire struct {
+	ID       string                 `json:"id,omitempty"`
+	Type     string                 `json:"type,omitempty"`
+	Function openAIFunctionCallWire `json:"function"`
+}
+
+type openAIFunctionDefinitionWire struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      *bool           `json:"strict,omitempty"`
+}
+
+type openAIToolWire struct {
+	Type     string                       `json:"type"`
+	Function openAIFunctionDefinitionWire `json:"function"`
+}
+
+type openAIResponseFormatWire struct {
+	Type       string          `json:"type"`
+	JSONSchema json.RawMessage `json:"json_schema,omitempty"`
 }
 
 func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stream bool, streamOptions *chat.StreamOptions) (map[string]any, error) {
@@ -82,15 +134,35 @@ func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stre
 	if err := validateReasoningEffort(request.ReasoningEffort); err != nil {
 		return nil, err
 	}
+	messages, err := buildOpenAIMessages(provider, request.Messages)
+	if err != nil {
+		return nil, err
+	}
+	tools := make([]openAIToolWire, len(request.Tools))
+	for index, tool := range request.Tools {
+		tools[index] = openAIToolWire{
+			Type: tool.Type,
+			Function: openAIFunctionDefinitionWire{
+				Name: tool.Function.Name, Description: tool.Function.Description,
+				Parameters: append(json.RawMessage(nil), tool.Function.Parameters...), Strict: tool.Function.Strict,
+			},
+		}
+	}
+	var responseFormat *openAIResponseFormatWire
+	if request.ResponseFormat != nil {
+		responseFormat = &openAIResponseFormatWire{
+			Type:       request.ResponseFormat.Type,
+			JSONSchema: append(json.RawMessage(nil), request.ResponseFormat.JSONSchema...),
+		}
+	}
 	wire := openAIChatWireRequest{
-		Model: request.Model, Messages: request.Messages, FrequencyPenalty: request.FrequencyPenalty,
-		LogitBias: request.LogitBias, LogProbs: request.LogProbs, TopLogProbs: request.TopLogProbs,
+		Model: request.Model, Messages: messages, FrequencyPenalty: request.FrequencyPenalty,
 		MaxTokens: request.MaxTokens, MaxCompletionTokens: request.MaxCompletionTokens,
-		Modalities: request.Modalities, N: request.N, ParallelToolCalls: request.ParallelToolCalls,
-		PresencePenalty: request.PresencePenalty, ReasoningEffort: request.ReasoningEffort,
-		ResponseFormat: request.ResponseFormat, Seed: request.Seed, ServiceTier: request.ServiceTier,
-		Stop: request.Stop, Store: request.Store, Temperature: request.Temperature, ToolChoice: request.ToolChoice,
-		Tools: request.Tools, TopP: request.TopP, User: request.User, Metadata: request.Metadata, Stream: stream,
+		N: request.N, ParallelToolCalls: request.ParallelToolCalls,
+		PresencePenalty: request.PresencePenalty, ReasoningEffort: string(request.ReasoningEffort),
+		ResponseFormat: responseFormat, Seed: request.Seed,
+		Stop: request.Stop, Temperature: request.Temperature, ToolChoice: request.ToolChoice,
+		Tools: tools, TopP: request.TopP, User: request.User, Stream: stream,
 	}
 	if stream {
 		wire.StreamOptions = defaultChatStreamOptions(streamOptions)
@@ -103,15 +175,110 @@ func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stre
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
-	mergeChatExtraBody(body, request.ExtraBody)
 	applyProviderReasoning(provider, request.Model, request.ReasoningEffort, body)
+	if err := mergeChatExtraBody(body, request.ExtraBody); err != nil {
+		return nil, err
+	}
 	return body, nil
+}
+
+func buildOpenAIMessages(provider Provider, messages []chat.Message) ([]openAIMessageWire, error) {
+	result := make([]openAIMessageWire, len(messages))
+	for index, message := range messages {
+		content, err := buildOpenAIMessageContent(provider, message.Content)
+		if err != nil {
+			var unsupported *UnsupportedParameterError
+			if errors.As(err, &unsupported) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%w: invalid message at index %d: %v", ErrInvalidRequest, index, err)
+		}
+		toolCalls := make([]openAIToolCallWire, len(message.ToolCalls))
+		for toolIndex, toolCall := range message.ToolCalls {
+			toolCalls[toolIndex] = openAIToolCallWire{
+				ID: toolCall.ID, Type: toolCall.Type,
+				Function: openAIFunctionCallWire{Name: toolCall.Function.Name, Arguments: toolCall.Function.Arguments},
+			}
+		}
+		result[index] = openAIMessageWire{
+			Role: string(message.Role), Content: content, Name: message.Name,
+			ToolCalls: toolCalls, ToolCallID: message.ToolCallID,
+		}
+	}
+	return result, nil
+}
+
+func buildOpenAIMessageContent(provider Provider, content chat.MessageContent) (any, error) {
+	if content.Text != nil && content.Parts != nil {
+		return nil, fmt.Errorf("content text and parts cannot both be set")
+	}
+	if content.Text != nil {
+		return *content.Text, nil
+	}
+	if content.Parts == nil {
+		return nil, nil
+	}
+	parts := make([]openAIContentPartWire, len(content.Parts))
+	for index, part := range content.Parts {
+		wire := openAIContentPartWire{Type: string(part.Type), Text: part.Text}
+		switch part.Type {
+		case chat.ContentPartText:
+			if part.Text == "" {
+				return nil, fmt.Errorf("text part at index %d is empty", index)
+			}
+		case chat.ContentPartImageURL:
+			if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
+				return nil, fmt.Errorf("image_url part at index %d is invalid", index)
+			}
+			wire.ImageURL = &openAIImageURLWire{URL: part.ImageURL.URL, Detail: part.ImageURL.Detail}
+		case chat.ContentPartInputAudio:
+			if !providerSupportsInputAudio(provider) {
+				return nil, &UnsupportedParameterError{Provider: provider, Capability: CapabilityChat, Parameter: "messages.content.input_audio"}
+			}
+			if part.InputAudio == nil || part.InputAudio.Data == "" || part.InputAudio.Format == "" {
+				return nil, fmt.Errorf("input_audio part at index %d is invalid", index)
+			}
+			wire.InputAudio = &openAIInputAudioWire{Data: part.InputAudio.Data, Format: part.InputAudio.Format}
+		case chat.ContentPartVideoURL:
+			if !providerSupportsVideoURL(provider) {
+				return nil, &UnsupportedParameterError{Provider: provider, Capability: CapabilityChat, Parameter: "messages.content.video_url"}
+			}
+			if part.VideoURL == nil || strings.TrimSpace(part.VideoURL.URL) == "" {
+				return nil, fmt.Errorf("video_url part at index %d is invalid", index)
+			}
+			wire.VideoURL = &openAIVideoURLWire{URL: part.VideoURL.URL}
+		default:
+			return nil, &UnsupportedParameterError{Provider: provider, Capability: CapabilityChat, Parameter: "messages.content." + string(part.Type)}
+		}
+		parts[index] = wire
+	}
+	return parts, nil
+}
+
+func providerSupportsInputAudio(provider Provider) bool {
+	switch provider {
+	case ProviderOpenAI, ProviderOpenAIAgent, ProviderAzure, ProviderOpenCompatible,
+		ProviderAli, ProviderDoubao, ProviderGemini, ProviderSiliconFlow:
+		return true
+	default:
+		return false
+	}
+}
+
+func providerSupportsVideoURL(provider Provider) bool {
+	switch provider {
+	case ProviderOpenCompatible, ProviderAli, ProviderDoubao, ProviderGemini, ProviderHunyuan:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateReasoningEffort(effort chat.ReasoningEffort) error {
 	switch effort {
 	case "", chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow,
-		chat.ReasoningEffortMedium, chat.ReasoningEffortHigh, chat.ReasoningEffortXHigh:
+		chat.ReasoningEffortMedium, chat.ReasoningEffortHigh, chat.ReasoningEffortXHigh,
+		chat.ReasoningEffortMax:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported reasoning_effort %q", ErrInvalidRequest, effort)
@@ -139,13 +306,14 @@ func normalizeChatStreamRequest(request *chat.StreamRequest) *chat.StreamRequest
 	return &result
 }
 
-func mergeChatExtraBody(body map[string]any, extra map[string]any) {
+func mergeChatExtraBody(body map[string]any, extra map[string]any) error {
 	for key, value := range extra {
 		if _, reserved := chatReservedRequestKeys[key]; reserved {
-			continue
+			return fmt.Errorf("%w: extra_body field %q conflicts with a reserved chat field", ErrInvalidRequest, key)
 		}
 		body[key] = value
 	}
+	return nil
 }
 
 func applyProviderReasoning(provider Provider, model string, effort chat.ReasoningEffort, body map[string]any) {

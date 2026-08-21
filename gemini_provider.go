@@ -31,11 +31,21 @@ func (p *geminiProvider) createEmbedding(ctx context.Context, selected credentia
 	if len(texts) == 0 {
 		return nil, fmt.Errorf("%w: embedding input is required", ErrInvalidRequest)
 	}
+	if request.EncodingFormat != "" && request.EncodingFormat != "float" {
+		return nil, &UnsupportedParameterError{Provider: ProviderGemini, Capability: CapabilityEmbedding, Parameter: "encoding_format"}
+	}
+	if request.User != "" {
+		return nil, &UnsupportedParameterError{Provider: ProviderGemini, Capability: CapabilityEmbedding, Parameter: "user"}
+	}
 	result := &embedding.CreateResponse{Object: "list", Model: request.Model, Data: make([]embedding.Data, 0, len(texts))}
 	for index, text := range texts {
-		body := map[string]any{"content": map[string]any{"parts": []any{map[string]any{"text": text}}}}
-		for key, value := range request.ExtraBody {
-			body[key] = value
+		wire := map[string]any{"content": map[string]any{"parts": []any{map[string]any{"text": text}}}}
+		if request.Dimensions != nil {
+			wire["outputDimensionality"] = *request.Dimensions
+		}
+		body, err := mergeExtraBody(wire, request.ExtraBody, embeddingReservedRequestKeys)
+		if err != nil {
+			return nil, err
 		}
 		endpoint, err := p.geminiEmbeddingURL(request.Model, selected.apiKey)
 		if err != nil {
@@ -66,8 +76,7 @@ func (p *geminiProvider) createEmbedding(ctx context.Context, selected credentia
 		if err := json.Unmarshal(raw, &source); err != nil {
 			return nil, err
 		}
-		result.Data = append(result.Data, embedding.Data{Object: "embedding", Embedding: source.Embedding.Values, Index: index})
-		result.RawResponse = raw
+		result.Data = append(result.Data, embedding.Data{Object: "embedding", Embedding: embedding.FloatEmbedding(source.Embedding.Values), Index: index})
 	}
 	return result, nil
 }

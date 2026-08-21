@@ -62,14 +62,20 @@ func mergeUsage(current *Usage, incoming Usage) {
 	if incoming.PromptTokensDetails.CachedTokens != 0 {
 		current.PromptTokensDetails.CachedTokens = incoming.PromptTokensDetails.CachedTokens
 	}
-	if incoming.PromptTokensDetails.ReasoningTokens != 0 {
-		current.PromptTokensDetails.ReasoningTokens = incoming.PromptTokensDetails.ReasoningTokens
+	if incoming.PromptTokensDetails.AudioTokens != 0 {
+		current.PromptTokensDetails.AudioTokens = incoming.PromptTokensDetails.AudioTokens
 	}
-	if incoming.CompletionTokenDetails.CachedTokens != 0 {
-		current.CompletionTokenDetails.CachedTokens = incoming.CompletionTokenDetails.CachedTokens
+	if incoming.CompletionTokensDetails.AcceptedPredictionTokens != 0 {
+		current.CompletionTokensDetails.AcceptedPredictionTokens = incoming.CompletionTokensDetails.AcceptedPredictionTokens
 	}
-	if incoming.CompletionTokenDetails.ReasoningTokens != 0 {
-		current.CompletionTokenDetails.ReasoningTokens = incoming.CompletionTokenDetails.ReasoningTokens
+	if incoming.CompletionTokensDetails.AudioTokens != 0 {
+		current.CompletionTokensDetails.AudioTokens = incoming.CompletionTokensDetails.AudioTokens
+	}
+	if incoming.CompletionTokensDetails.ReasoningTokens != 0 {
+		current.CompletionTokensDetails.ReasoningTokens = incoming.CompletionTokensDetails.ReasoningTokens
+	}
+	if incoming.CompletionTokensDetails.RejectedPredictionTokens != 0 {
+		current.CompletionTokensDetails.RejectedPredictionTokens = incoming.CompletionTokensDetails.RejectedPredictionTokens
 	}
 	if incoming.TotalTokens != 0 {
 		current.TotalTokens = incoming.TotalTokens

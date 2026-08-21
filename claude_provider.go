@@ -100,7 +100,7 @@ func (p *claudeProvider) createChat(ctx context.Context, selected credential, re
 	if err := json.Unmarshal(raw, &source); err != nil {
 		return nil, err
 	}
-	result := &chat.CreateResponse{ID: source.ID, Object: "chat.completion", Model: source.Model, RawResponse: raw}
+	result := &chat.CreateResponse{ID: source.ID, Object: "chat.completion", Model: source.Model}
 	choice := chat.Choice{Index: 0, FinishReason: source.StopReason, Message: chat.Message{Role: chat.RoleAssistant}}
 	var text, reasoning strings.Builder
 	for _, content := range source.Content {
@@ -143,13 +143,25 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 	if request == nil || request.Model == "" || len(request.Messages) == 0 {
 		return nil, fmt.Errorf("%w: model and messages are required", ErrInvalidRequest)
 	}
+	for parameter, configured := range map[string]bool{
+		"frequency_penalty": request.FrequencyPenalty != nil,
+		"n":                 request.N != nil,
+		"presence_penalty":  request.PresencePenalty != nil,
+		"response_format":   request.ResponseFormat != nil,
+		"seed":              request.Seed != nil,
+	} {
+		if configured {
+			return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: parameter}
+		}
+	}
 	messages := make([]claudeRequestMessage, 0, len(request.Messages))
 	var system strings.Builder
 	for _, message := range request.Messages {
 		if message.Role == chat.RoleSystem || message.Role == chat.RoleDeveloper {
-			if message.Content.Text != nil {
-				system.WriteString(*message.Content.Text)
+			if message.Content.Text == nil || message.Content.Parts != nil || len(message.ToolCalls) > 0 {
+				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "system_message_content"}
 			}
+			system.WriteString(*message.Content.Text)
 			continue
 		}
 		converted, err := convertClaudeMessage(message)
@@ -174,18 +186,82 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 	if request.TopP != nil {
 		body["top_p"] = *request.TopP
 	}
+	if len(request.Stop) > 0 {
+		body["stop_sequences"] = append([]string(nil), request.Stop...)
+	}
+	if request.User != "" {
+		body["metadata"] = map[string]any{"user_id": request.User}
+	}
 	if len(request.Tools) > 0 {
 		tools := make([]map[string]any, 0, len(request.Tools))
 		for _, tool := range request.Tools {
-			tools = append(tools, map[string]any{"name": tool.Function.Name, "description": tool.Function.Description, "input_schema": tool.Function.Parameters})
+			if tool.Type != "" && tool.Type != "function" {
+				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "tools." + tool.Type}
+			}
+			tools = append(tools, map[string]any{
+				"name": tool.Function.Name, "description": tool.Function.Description,
+				"input_schema": append(json.RawMessage(nil), tool.Function.Parameters...),
+			})
 		}
 		body["tools"] = tools
 	}
-	mergeChatExtraBody(body, request.ExtraBody)
+	toolChoice, err := buildClaudeToolChoice(request.ToolChoice, request.ParallelToolCalls)
+	if err != nil {
+		return nil, err
+	}
+	if toolChoice != nil {
+		body["tool_choice"] = toolChoice
+	}
 	if err := applyClaudeReasoning(request.Model, request.ReasoningEffort, body); err != nil {
 		return nil, err
 	}
+	if err := mergeChatExtraBody(body, request.ExtraBody); err != nil {
+		return nil, err
+	}
 	return body, nil
+}
+
+func buildClaudeToolChoice(value any, parallel *bool) (map[string]any, error) {
+	result := map[string]any{}
+	if value != nil {
+		switch choice := value.(type) {
+		case string:
+			switch choice {
+			case "auto":
+				result["type"] = "auto"
+			case "required":
+				result["type"] = "any"
+			default:
+				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "tool_choice." + choice}
+			}
+		default:
+			raw, err := json.Marshal(value)
+			if err != nil {
+				return nil, fmt.Errorf("%w: invalid tool_choice: %v", ErrInvalidRequest, err)
+			}
+			var openAIChoice struct {
+				Type     string `json:"type"`
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			}
+			if err := json.Unmarshal(raw, &openAIChoice); err != nil || openAIChoice.Type != "function" || openAIChoice.Function.Name == "" {
+				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "tool_choice"}
+			}
+			result["type"] = "tool"
+			result["name"] = openAIChoice.Function.Name
+		}
+	}
+	if parallel != nil {
+		if len(result) == 0 {
+			result["type"] = "auto"
+		}
+		result["disable_parallel_tool_use"] = !*parallel
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
 }
 
 func convertClaudeMessage(message chat.Message) (claudeRequestMessage, error) {

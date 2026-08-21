@@ -14,6 +14,7 @@ func TestReasoningEffortValidation(t *testing.T) {
 	valid := []chat.ReasoningEffort{
 		"", chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow,
 		chat.ReasoningEffortMedium, chat.ReasoningEffortHigh, chat.ReasoningEffortXHigh,
+		chat.ReasoningEffortMax,
 	}
 	for _, effort := range valid {
 		if err := validateReasoningEffort(effort); err != nil {
@@ -74,7 +75,7 @@ func TestProviderReasoningRequestMapping(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			maxTokens := 1024
 			temperature := 0.7
-			extra := map[string]any{"custom_extension": "kept", "thinking": "caller", "temperature": 99}
+			extra := map[string]any{"custom_extension": "kept"}
 			request := &chat.CreateRequest{
 				Model: test.model, Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
 				MaxTokens: &maxTokens, Temperature: &temperature, ReasoningEffort: test.effort, ExtraBody: extra,
@@ -85,8 +86,22 @@ func TestProviderReasoningRequestMapping(t *testing.T) {
 			}
 			assertBodyValue(t, body, "custom_extension", "kept")
 			test.assert(t, body)
-			if request.MaxTokens != &maxTokens || request.Temperature != &temperature || request.ExtraBody["thinking"] != "caller" {
+			if request.MaxTokens != &maxTokens || request.Temperature != &temperature || request.ExtraBody["custom_extension"] != "kept" {
 				t.Fatalf("caller request was mutated: %#v", request)
+			}
+		})
+	}
+}
+
+func TestChatExtraBodyRejectsPublicAndGeneratedFields(t *testing.T) {
+	for _, field := range []string{"temperature", "stream", "reasoning_effort", "enable_thinking", "think", "thinking", "reasoning", "reasoning_split"} {
+		t.Run(field, func(t *testing.T) {
+			request := &chat.CreateRequest{
+				Model: "model", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
+				ReasoningEffort: chat.ReasoningEffortMedium, ExtraBody: map[string]any{field: true},
+			}
+			if _, err := buildOpenAIChatRequest(ProviderAli, request, false, nil); !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("field %q error = %v, want ErrInvalidRequest", field, err)
 			}
 		})
 	}
@@ -138,7 +153,6 @@ func TestBuildClaudeRequestAppliesProviderReasoning(t *testing.T) {
 	request := &chat.CreateRequest{
 		Model: "claude-3-7-sonnet", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
 		MaxTokens: &maxTokens, Temperature: &temperature, ReasoningEffort: chat.ReasoningEffortMedium,
-		ExtraBody: map[string]any{"thinking": map[string]any{"type": "caller"}},
 	}
 	body, err := buildClaudeRequest(request, false)
 	if err != nil {
@@ -149,6 +163,17 @@ func TestBuildClaudeRequestAppliesProviderReasoning(t *testing.T) {
 	assertBodyMissing(t, body, "temperature", "reasoning_effort")
 	if *request.MaxTokens != 1024 || *request.Temperature != 0.8 {
 		t.Fatal("caller request was mutated")
+	}
+}
+
+func TestBuildClaudeRequestRejectsGeneratedThinkingConflict(t *testing.T) {
+	request := &chat.CreateRequest{
+		Model: "claude-3-7-sonnet", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
+		ReasoningEffort: chat.ReasoningEffortMedium,
+		ExtraBody:       map[string]any{"thinking": map[string]any{"type": "caller"}},
+	}
+	if _, err := buildClaudeRequest(request, false); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
 }
 

@@ -3,16 +3,13 @@
 package llm
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
-
-	"github.com/zhimaAi/llm_adaptor/v2/chat"
-	"github.com/zhimaAi/llm_adaptor/v2/image"
 )
 
 func TestOpenAIChatStreamParseErrorTerminates(t *testing.T) {
@@ -30,7 +27,7 @@ func TestOpenAIChatStreamParseErrorTerminates(t *testing.T) {
 func TestOpenAIImageStreamParseErrorTerminates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	body := io.NopCloser(strings.NewReader("data: {invalid}\n"))
-	stream := newOpenAIImageStream(ctx, body, cancel, ClientConfig{}, ProviderOpenAI, "hint", image.GenerateRequest{})
+	stream := newOpenAIImageStream(ctx, body, cancel, ClientConfig{}, ProviderOpenAI, "hint", imageRequestOptions{})
 	if _, err := stream.Recv(); err == nil || errors.Is(err, io.EOF) {
 		t.Fatalf("expected parse error, got %v", err)
 	}
@@ -68,25 +65,13 @@ func TestOpenAIChatStreamConcurrentCloseUnblocksRecv(t *testing.T) {
 	}
 }
 
-type errorChatStream struct {
-	err       error
-	closeOnce sync.Once
-}
-
-func (s *errorChatStream) Recv() (*chat.StreamChunk, error) { return nil, s.err }
-func (s *errorChatStream) Close() error {
-	s.closeOnce.Do(func() {})
-	return nil
-}
-
 func TestOpenRouterImageStreamErrorTerminates(t *testing.T) {
-	wantErr := errors.New("stream failed")
-	inner := &errorChatStream{err: wantErr}
+	scanner := bufio.NewScanner(strings.NewReader("data: {invalid}\n"))
 	stream := &openRouterImageStream{
-		ctx: context.Background(), stream: inner, terminal: newStreamTerminal(nil, inner.Close),
+		ctx: context.Background(), scanner: scanner, terminal: newStreamTerminal(nil, nil),
 	}
-	if _, err := stream.Recv(); !errors.Is(err, wantErr) {
-		t.Fatalf("expected original error, got %v", err)
+	if _, err := stream.Recv(); err == nil || errors.Is(err, io.EOF) {
+		t.Fatalf("expected parse error, got %v", err)
 	}
 	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF after error, got %v", err)
