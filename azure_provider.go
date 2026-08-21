@@ -30,12 +30,11 @@ func (p *azureProvider) createChat(ctx context.Context, selected credential, req
 	if request == nil || request.Model == "" || len(request.Messages) == 0 {
 		return nil, fmt.Errorf("%w: model and messages are required", ErrInvalidRequest)
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	body, err := buildOpenAIChatRequest(ProviderAzure, request, false, nil)
 	if err != nil {
 		return nil, err
 	}
 	delete(body, "model")
-	body["stream"] = false
 	raw, err := p.do(ctx, selected, request.Model, "chat/completions", body, false)
 	if err != nil {
 		return nil, err
@@ -53,19 +52,18 @@ func (p *azureProvider) streamChat(ctx context.Context, selected credential, req
 	if request == nil || request.Model == "" || len(request.Messages) == 0 {
 		return nil, fmt.Errorf("%w: model and messages are required", ErrInvalidRequest)
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	body, err := buildOpenAIChatRequest(ProviderAzure, &request.CreateRequest, true, request.StreamOptions)
 	if err != nil {
 		return nil, err
 	}
 	delete(body, "model")
-	body["stream"] = true
 	streamContext, cancel := context.WithCancel(ctx)
 	response, err := p.doResponse(streamContext, selected, request.Model, "chat/completions", body)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	return newThinkTagStream(newOpenAIChatStream(response.Body, cancel, ProviderAzure, selected.hint)), nil
+	return newThinkTagStream(newOpenAIChatStream(streamContext, response.Body, cancel, ProviderAzure, selected.hint)), nil
 }
 
 func (p *azureProvider) createEmbedding(ctx context.Context, selected credential, request *embedding.CreateRequest) (*embedding.CreateResponse, error) {

@@ -80,6 +80,17 @@ func TestImageRequestUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
 func TestOpenRouterImageStreamConvertsDeltaImages(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte("image"))
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		modalities, _ := body["modalities"].([]any)
+		streamOptions, _ := body["stream_options"].(map[string]any)
+		if len(modalities) != 2 || streamOptions["include_usage"] != true {
+			t.Errorf("missing typed modalities or default usage: %#v", body)
+			return
+		}
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, `data: {"id":"id","choices":[{"index":0,"delta":{"images":[{"type":"image_url","image_url":{"url":"data:image/png;base64,`+encoded+`"}}]}}]}`+"\n\n")
 		_, _ = io.WriteString(writer, "data: [DONE]\n\n")
@@ -142,5 +153,58 @@ func TestImageStreamPreservesPartialFailure(t *testing.T) {
 	}
 	if chunk.Error.Code != "render_failed" || chunk.Error.Message != "try again" {
 		t.Fatalf("unexpected partial failure: %#v", chunk)
+	}
+}
+
+func TestAliImageStreamReturnsEveryImageAndUsageOnce(t *testing.T) {
+	response := &image.GenerateResponse{
+		Data:  []image.Data{{URL: "one"}, {URL: "two"}, {URL: "three"}},
+		Usage: image.Usage{InputTokens: 2, OutputTokens: 3, TotalTokens: 5}, RawResponse: []byte(`{"data":[]}`),
+	}
+	stream := &singleImageStream{response: response, terminal: newStreamTerminal(nil, nil)}
+	for index, wantURL := range []string{"one", "two", "three"} {
+		chunk, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if chunk.URL != wantURL {
+			t.Fatalf("chunk %d URL = %q, want %q", index, chunk.URL, wantURL)
+		}
+		if index == 0 {
+			if chunk.Usage.TotalTokens != 5 || len(chunk.RawResponse) == 0 {
+				t.Fatalf("first chunk lost accounting metadata: %#v", chunk)
+			}
+		} else if chunk.Usage.TotalTokens != 0 || len(chunk.RawResponse) != 0 {
+			t.Fatalf("chunk %d duplicated accounting metadata: %#v", index, chunk)
+		}
+	}
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF, got %v", err)
+	}
+}
+
+func TestDownloadedImageFormatUsesOriginalURLSuffix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = writer.Write([]byte("image"))
+	}))
+	defer server.Close()
+	data := image.Data{URL: server.URL + "/generated.JPG?download=1"}
+	request := &image.GenerateRequest{ResponseFormat: imageResponseFormatBase64}
+	if err := normalizeImageData(context.Background(), ClientConfig{HTTPClient: server.Client()}, ProviderOpenAI, "hint", request, &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Format != imageFormatJPEG || data.MIMEType != "image/jpeg" {
+		t.Fatalf("unexpected normalized image: %#v", data)
+	}
+}
+
+func TestUnknownImageFormatDefaultsToJPG(t *testing.T) {
+	data := image.Data{B64JSON: base64.StdEncoding.EncodeToString([]byte("image"))}
+	if err := normalizeImageData(context.Background(), ClientConfig{}, ProviderOpenAI, "hint", &image.GenerateRequest{}, &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Format != imageFormatJPG || data.MIMEType != "image/jpeg" {
+		t.Fatalf("unexpected fallback image metadata: %#v", data)
 	}
 }

@@ -152,7 +152,7 @@ func (s ChatService) Stream(ctx context.Context, req *chat.StreamRequest) (chat.
 	if err != nil {
 		return nil, err
 	}
-	return provider.streamChat(ctx, selected, req)
+	return provider.streamChat(ctx, selected, normalizeChatStreamRequest(req))
 }
 
 type EmbeddingService struct{ client *Client }

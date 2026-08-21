@@ -3,6 +3,7 @@
 package llm
 
 import (
+	"errors"
 	"io"
 	"testing"
 
@@ -60,3 +61,32 @@ func (s *sliceChatStream) Recv() (*chat.StreamChunk, error) {
 }
 
 func (s *sliceChatStream) Close() error { return nil }
+
+type errorAfterChunkStream struct {
+	returned bool
+	err      error
+}
+
+func (s *errorAfterChunkStream) Recv() (*chat.StreamChunk, error) {
+	if !s.returned {
+		s.returned = true
+		return &chat.StreamChunk{Choices: []chat.ChunkChoice{{Index: 0, Delta: chat.Message{Content: chat.TextContent("<think>partial")}}}}, nil
+	}
+	return nil, s.err
+}
+
+func (s *errorAfterChunkStream) Close() error { return nil }
+
+func TestThinkTagStreamDoesNotFlushAfterTerminalError(t *testing.T) {
+	wantErr := errors.New("failed")
+	stream := newThinkTagStream(&errorAfterChunkStream{err: wantErr})
+	if _, err := stream.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); !errors.Is(err, wantErr) {
+		t.Fatalf("expected original error, got %v", err)
+	}
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after error, got %v", err)
+	}
+}

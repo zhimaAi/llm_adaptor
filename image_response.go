@@ -19,6 +19,7 @@ import (
 const (
 	imageResponseFormatBase64 = "b64_json"
 	imageFormatPNG            = "png"
+	imageFormatJPG            = "jpg"
 	imageFormatJPEG           = "jpeg"
 )
 
@@ -35,6 +36,7 @@ func normalizeImageData(ctx context.Context, config ClientConfig, provider Provi
 	if data.Error.Code != "" || data.Error.Message != "" {
 		return nil
 	}
+	originalURL := data.URL
 	if strings.HasPrefix(data.URL, "data:") {
 		mimeType, encoded, err := parseImageDataURL(data.URL)
 		if err != nil {
@@ -55,24 +57,17 @@ func normalizeImageData(ctx context.Context, config ClientConfig, provider Provi
 			return fmt.Errorf("%w: invalid base64 image: %v", ErrInvalidRequest, err)
 		}
 	}
-	data.Format = imageFormat(data.MIMEType, data.URL, request.OutputFormat)
-	if data.Format == "" && data.B64JSON != "" {
-		data.Format = defaultImageFormat(provider)
+	data.Format = imageFormat(data.MIMEType, originalURL, request.OutputFormat)
+	if data.Format == "" {
+		data.Format = imageFormatJPG
 	}
-	if data.MIMEType == "" {
+	if imageFormat(data.MIMEType, "", "") == "" {
 		data.MIMEType = imageMIMEType(data.Format)
 	}
 	if request.ResponseFormat == imageResponseFormatBase64 && (data.B64JSON == "" || data.Format == "") {
 		return fmt.Errorf("%w: base64 image data and format are required", ErrInvalidRequest)
 	}
 	return nil
-}
-
-func defaultImageFormat(provider Provider) string {
-	if provider == ProviderDoubao {
-		return imageFormatJPEG
-	}
-	return imageFormatPNG
 }
 
 func parseImageDataURL(value string) (string, string, error) {

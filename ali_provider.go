@@ -148,29 +148,40 @@ func (p *aliProvider) streamImage(ctx context.Context, selected credential, requ
 	if err != nil {
 		return nil, err
 	}
-	return &singleImageStream{response: response}, nil
+	return &singleImageStream{response: response, terminal: newStreamTerminal(nil, nil)}, nil
 }
 
 type singleImageStream struct {
 	response *image.GenerateResponse
-	done     bool
+	index    int
+	terminal *streamTerminal
 }
 
 func (s *singleImageStream) Recv() (*image.StreamChunk, error) {
-	if s.done {
+	if s.terminal.isDone() {
 		return nil, io.EOF
 	}
-	s.done = true
-	chunk := &image.StreamChunk{Usage: s.response.Usage, RawResponse: s.response.RawResponse}
-	if len(s.response.Data) > 0 {
-		chunk.URL = s.response.Data[0].URL
-		chunk.B64JSON = s.response.Data[0].B64JSON
-		chunk.Format = s.response.Data[0].Format
-		chunk.MIMEType = s.response.Data[0].MIMEType
+	chunk := &image.StreamChunk{}
+	if s.index == 0 {
+		chunk.Usage = s.response.Usage
+		chunk.RawResponse = s.response.RawResponse
+	}
+	if len(s.response.Data) == 0 {
+		s.terminal.finish()
+		return chunk, nil
+	}
+	item := s.response.Data[s.index]
+	chunk.URL = item.URL
+	chunk.B64JSON = item.B64JSON
+	chunk.Format = item.Format
+	chunk.MIMEType = item.MIMEType
+	s.index++
+	if s.index == len(s.response.Data) {
+		s.terminal.finish()
 	}
 	return chunk, nil
 }
-func (s *singleImageStream) Close() error { s.done = true; return nil }
+func (s *singleImageStream) Close() error { return s.terminal.close() }
 
 var _ rerankProvider = (*aliProvider)(nil)
 var _ imageProvider = (*aliProvider)(nil)

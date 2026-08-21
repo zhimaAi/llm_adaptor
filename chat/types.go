@@ -138,6 +138,18 @@ type StreamOptions struct {
 	IncludeUsage *bool `json:"include_usage,omitempty"`
 }
 
+// ReasoningEffort constrains how much reasoning-capable models should perform.
+type ReasoningEffort string
+
+const (
+	ReasoningEffortNone    ReasoningEffort = "none"
+	ReasoningEffortMinimal ReasoningEffort = "minimal"
+	ReasoningEffortLow     ReasoningEffort = "low"
+	ReasoningEffortMedium  ReasoningEffort = "medium"
+	ReasoningEffortHigh    ReasoningEffort = "high"
+	ReasoningEffortXHigh   ReasoningEffort = "xhigh"
+)
+
 type CreateRequest struct {
 	Model               string          `json:"model"`
 	Messages            []Message       `json:"messages"`
@@ -151,7 +163,7 @@ type CreateRequest struct {
 	N                   *int            `json:"n,omitempty"`
 	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"`
 	PresencePenalty     *float64        `json:"presence_penalty,omitempty"`
-	ReasoningEffort     string          `json:"reasoning_effort,omitempty"`
+	ReasoningEffort     ReasoningEffort `json:"reasoning_effort,omitempty"`
 	ResponseFormat      *ResponseFormat `json:"response_format,omitempty"`
 	Seed                *int64          `json:"seed,omitempty"`
 	ServiceTier         string          `json:"service_tier,omitempty"`

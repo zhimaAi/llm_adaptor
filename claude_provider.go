@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/zhimaAi/llm_adaptor/v2/chat"
 )
@@ -137,7 +136,7 @@ func (p *claudeProvider) streamChat(ctx context.Context, selected credential, re
 		cancel()
 		return nil, err
 	}
-	return newClaudeStream(response.Body, cancel, selected.hint), nil
+	return newClaudeStream(streamContext, response.Body, cancel, selected.hint), nil
 }
 
 func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]any, error) {
@@ -182,8 +181,9 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 		}
 		body["tools"] = tools
 	}
-	for key, value := range request.ExtraBody {
-		body[key] = value
+	mergeChatExtraBody(body, request.ExtraBody)
+	if err := applyClaudeReasoning(request.Model, request.ReasoningEffort, body); err != nil {
+		return nil, err
 	}
 	return body, nil
 }
@@ -286,25 +286,23 @@ func (p *claudeProvider) do(ctx context.Context, selected credential, body any) 
 }
 
 type claudeStream struct {
-	body        io.ReadCloser
+	ctx         context.Context
 	scanner     *bufio.Scanner
-	closeOnce   sync.Once
-	finished    bool
+	terminal    *streamTerminal
 	model       string
 	id          string
 	toolIndexes map[int]int
-	cancel      context.CancelFunc
 	hint        string
 }
 
-func newClaudeStream(body io.ReadCloser, cancel context.CancelFunc, hint string) *claudeStream {
+func newClaudeStream(ctx context.Context, body io.ReadCloser, cancel context.CancelFunc, hint string) *claudeStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
-	return &claudeStream{body: body, scanner: scanner, toolIndexes: make(map[int]int), cancel: cancel, hint: hint}
+	return &claudeStream{ctx: ctx, scanner: scanner, terminal: newStreamTerminal(cancel, body.Close), toolIndexes: make(map[int]int), hint: hint}
 }
 
 func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
-	if s.finished {
+	if s.terminal.isDone() {
 		return nil, io.EOF
 	}
 	for s.scanner.Scan() {
@@ -314,8 +312,7 @@ func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
 		}
 		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 		if err := decodeStreamAPIError(ProviderClaude, s.hint, line); err != nil {
-			s.finished = true
-			return nil, err
+			return nil, s.terminal.fail(s.ctx, err)
 		}
 		var event struct {
 			Type         string         `json:"type"`
@@ -334,7 +331,7 @@ func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal(line, &event); err != nil {
-			return nil, err
+			return nil, s.terminal.fail(s.ctx, err)
 		}
 		chunk := &chat.StreamChunk{ID: s.id, Object: "chat.completion.chunk", Model: s.model}
 		choice := chat.ChunkChoice{Index: 0}
@@ -347,14 +344,22 @@ func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
 			choice.Delta.Role = chat.RoleAssistant
 		case "content_block_start":
 			if event.ContentBlock.Type == "tool_use" {
-				idx := event.Index
+				idx, exists := s.toolIndexes[event.Index]
+				if !exists {
+					idx = len(s.toolIndexes)
+					s.toolIndexes[event.Index] = idx
+				}
 				choice.Delta.ToolCalls = []chat.ToolCall{{Index: &idx, ID: event.ContentBlock.ID, Type: "function", Function: chat.FunctionCall{Name: event.ContentBlock.Name}}}
 			}
 		case "content_block_delta":
 			choice.Delta.Content = chat.TextContent(event.Delta.Text)
 			choice.Delta.ReasoningContent = event.Delta.Thinking
 			if event.Delta.PartialJSON != "" {
-				idx := event.Index
+				idx, exists := s.toolIndexes[event.Index]
+				if !exists {
+					err := fmt.Errorf("%w: Claude tool delta references unknown content index %d", ErrInvalidRequest, event.Index)
+					return nil, s.terminal.fail(s.ctx, err)
+				}
 				choice.Delta.ToolCalls = []chat.ToolCall{{Index: &idx, Function: chat.FunctionCall{Arguments: event.Delta.PartialJSON}}}
 			}
 		case "message_delta":
@@ -362,7 +367,7 @@ func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
 			usage := chat.Usage{CompletionTokens: event.Usage.OutputTokens}
 			chunk.Usage = &usage
 		case "message_stop":
-			s.finished = true
+			s.terminal.finish()
 			return nil, io.EOF
 		default:
 			continue
@@ -371,22 +376,20 @@ func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
 		return chunk, nil
 	}
 	if err := s.scanner.Err(); err != nil {
-		return nil, err
+		return nil, s.terminal.fail(s.ctx, err)
 	}
-	s.finished = true
+	if s.terminal.isDone() {
+		return nil, io.EOF
+	}
+	if s.ctx != nil && s.ctx.Err() != nil {
+		return nil, s.terminal.fail(s.ctx, s.ctx.Err())
+	}
+	s.terminal.finish()
 	return nil, io.EOF
 }
 
 func (s *claudeStream) Close() error {
-	var err error
-	s.closeOnce.Do(func() {
-		s.finished = true
-		if s.cancel != nil {
-			s.cancel()
-		}
-		err = s.body.Close()
-	})
-	return err
+	return s.terminal.close()
 }
 
 var _ chatProvider = (*claudeProvider)(nil)

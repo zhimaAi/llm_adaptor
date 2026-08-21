@@ -35,11 +35,10 @@ func (p *openRouterProvider) generateImage(ctx context.Context, selected credent
 	if request == nil || request.Model == "" || strings.TrimSpace(request.Prompt) == "" {
 		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
 	}
-	extra := make(map[string]any, len(request.ExtraBody)+2)
+	extra := make(map[string]any, len(request.ExtraBody)+1)
 	for key, value := range request.ExtraBody {
 		extra[key] = value
 	}
-	extra["modalities"] = []string{"image", "text"}
 	imageConfig := map[string]any{}
 	if request.Size != "" {
 		imageConfig["image_size"] = request.Size
@@ -48,9 +47,8 @@ func (p *openRouterProvider) generateImage(ctx context.Context, selected credent
 		extra["image_config"] = imageConfig
 	}
 	chatResponse, err := p.createChat(ctx, selected, &chat.CreateRequest{
-		Model:     request.Model,
-		Messages:  []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(request.Prompt, request.Image)}},
-		ExtraBody: extra,
+		Model: request.Model, Messages: []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(request.Prompt, request.Image)}},
+		Modalities: []string{"image", "text"}, ExtraBody: extra,
 	})
 	if err != nil {
 		return nil, err
@@ -77,49 +75,53 @@ func (p *openRouterProvider) streamImage(ctx context.Context, selected credentia
 	if request == nil || request.Model == "" || strings.TrimSpace(request.Prompt) == "" {
 		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
 	}
-	extra := make(map[string]any, len(request.ExtraBody)+2)
+	extra := make(map[string]any, len(request.ExtraBody)+1)
 	for key, value := range request.ExtraBody {
 		extra[key] = value
 	}
-	extra["modalities"] = []string{"image", "text"}
 	if request.Size != "" {
 		extra["image_config"] = map[string]any{"image_size": request.Size}
 	}
 	stream, err := p.streamChat(ctx, selected, &chat.StreamRequest{CreateRequest: chat.CreateRequest{
-		Model: request.Model, Messages: []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(request.Prompt, request.Image)}}, ExtraBody: extra,
+		Model: request.Model, Messages: []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(request.Prompt, request.Image)}},
+		Modalities: []string{"image", "text"}, ExtraBody: extra,
 	}})
 	if err != nil {
 		return nil, err
 	}
-	return &openRouterImageStream{ctx: ctx, stream: stream, config: p.config, selected: selected, request: request.GenerateRequest}, nil
+	return &openRouterImageStream{
+		ctx: ctx, stream: stream, terminal: newStreamTerminal(nil, stream.Close),
+		config: p.config, selected: selected, request: request.GenerateRequest,
+	}, nil
 }
 
 type openRouterImageStream struct {
 	ctx      context.Context
 	stream   chat.Stream
+	terminal *streamTerminal
 	config   ClientConfig
 	selected credential
 	request  image.GenerateRequest
 	pending  []*image.StreamChunk
-	finished bool
 }
 
 func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
+	if s.terminal.isDone() {
+		return nil, io.EOF
+	}
 	if len(s.pending) > 0 {
 		chunk := s.pending[0]
 		s.pending = s.pending[1:]
 		return chunk, nil
 	}
-	if s.finished {
-		return nil, io.EOF
-	}
 	for {
 		chunk, err := s.stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				s.finished = true
+				s.terminal.finish()
+				return nil, io.EOF
 			}
-			return nil, err
+			return nil, s.terminal.fail(s.ctx, err)
 		}
 		usage := image.Usage{}
 		if chunk.Usage != nil {
@@ -134,7 +136,7 @@ func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
 				}
 				response := &image.GenerateResponse{Data: []image.Data{{URL: generated.ImageURL.URL}}}
 				if err := normalizeImageResponse(s.ctx, s.config, ProviderOpenRouter, s.selected.hint, &s.request, response); err != nil {
-					return nil, err
+					return nil, s.terminal.fail(s.ctx, err)
 				}
 				item := response.Data[0]
 				s.pending = append(s.pending, &image.StreamChunk{URL: item.URL, B64JSON: item.B64JSON, Format: item.Format, MIMEType: item.MIMEType, Usage: usage, RawResponse: chunk.RawResponse})
@@ -150,8 +152,7 @@ func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
 }
 
 func (s *openRouterImageStream) Close() error {
-	s.finished = true
-	return s.stream.Close()
+	return s.terminal.close()
 }
 
 var _ imageProvider = (*openRouterProvider)(nil)

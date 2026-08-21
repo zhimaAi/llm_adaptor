@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/zhimaAi/llm_adaptor/v2/speech"
 )
@@ -109,10 +108,9 @@ func (p *miniMaxProvider) streamSpeech(ctx context.Context, credential credentia
 	scanner.Buffer(make([]byte, miniMaxStreamInitialBuffer), miniMaxStreamMaximumBuffer)
 	return &miniMaxSpeechStream{
 		ctx:            streamContext,
-		body:           response.Body,
 		scanner:        scanner,
 		credentialHint: credential.hint,
-		cancel:         cancel,
+		terminal:       newStreamTerminal(cancel, response.Body.Close),
 	}, nil
 }
 
@@ -134,17 +132,13 @@ func validateSpeechRequest(ctx context.Context, request *speech.CreateRequest) e
 
 type miniMaxSpeechStream struct {
 	ctx            context.Context
-	body           io.ReadCloser
 	scanner        *bufio.Scanner
 	credentialHint string
-	finished       bool
-	closeOnce      sync.Once
-	cancel         context.CancelFunc
-	closeErr       error
+	terminal       *streamTerminal
 }
 
 func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
-	if s.finished {
+	if s.terminal.isDone() {
 		return nil, io.EOF
 	}
 	for s.scanner.Scan() {
@@ -154,7 +148,7 @@ func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
 		}
 		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 		if bytes.Equal(line, []byte("[DONE]")) {
-			s.finished = true
+			s.terminal.finish()
 			return nil, io.EOF
 		}
 		chunk := &speech.StreamChunk{}
@@ -167,38 +161,29 @@ func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
 			return s.fail(miniMaxBusinessError(chunk.BaseResponse, chunk.TraceID, s.credentialHint, line))
 		}
 		if chunk.Data != nil && chunk.Data.Status == miniMaxSpeechStatusComplete {
-			s.finished = true
+			s.terminal.finish()
 		}
 		return chunk, nil
 	}
 	if err := s.scanner.Err(); err != nil {
 		return s.fail(err)
 	}
-	s.finished = true
+	if s.terminal.isDone() {
+		return nil, io.EOF
+	}
+	if s.ctx != nil && s.ctx.Err() != nil {
+		return s.fail(s.ctx.Err())
+	}
+	s.terminal.finish()
 	return nil, io.EOF
 }
 
 func (s *miniMaxSpeechStream) fail(err error) (*speech.StreamChunk, error) {
-	if s.ctx != nil && s.ctx.Err() != nil {
-		err = s.ctx.Err()
-	}
-	s.close()
-	return nil, err
-}
-
-func (s *miniMaxSpeechStream) close() {
-	s.closeOnce.Do(func() {
-		s.finished = true
-		if s.cancel != nil {
-			s.cancel()
-		}
-		s.closeErr = s.body.Close()
-	})
+	return nil, s.terminal.fail(s.ctx, err)
 }
 
 func (s *miniMaxSpeechStream) Close() error {
-	s.close()
-	return s.closeErr
+	return s.terminal.close()
 }
 
 func decodeSpeechResponse(raw []byte, response *speech.CreateResponse) error {

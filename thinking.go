@@ -106,6 +106,9 @@ func (s *thinkTagStream) Recv() (*chat.StreamChunk, error) {
 	chunk, err := s.stream.Recv()
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
+			s.finished = true
+			s.pending = nil
+			s.extractors = nil
 			return nil, err
 		}
 		s.finished = true

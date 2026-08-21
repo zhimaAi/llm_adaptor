@@ -222,12 +222,7 @@ func TestMiniMaxSpeechStreamStopsAfterPayloadError(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			body := io.NopCloser(strings.NewReader(test.raw))
-			stream := &miniMaxSpeechStream{
-				ctx:     ctx,
-				body:    body,
-				scanner: bufio.NewScanner(body),
-				cancel:  cancel,
-			}
+			stream := newMiniMaxTestStream(ctx, cancel, body)
 			if _, err := stream.Recv(); err == nil || errors.Is(err, io.EOF) {
 				t.Fatalf("expected stream error, got %v", err)
 			}
@@ -240,12 +235,7 @@ func TestMiniMaxSpeechStreamStopsAfterReadError(t *testing.T) {
 	wantErr := errors.New("read failed")
 	ctx, cancel := context.WithCancel(context.Background())
 	body := &errorReadCloser{err: wantErr}
-	stream := &miniMaxSpeechStream{
-		ctx:     ctx,
-		body:    body,
-		scanner: bufio.NewScanner(body),
-		cancel:  cancel,
-	}
+	stream := newMiniMaxTestStream(ctx, cancel, body)
 	if _, err := stream.Recv(); !errors.Is(err, wantErr) {
 		t.Fatalf("expected read error, got %v", err)
 	}
@@ -280,17 +270,18 @@ func TestMiniMaxSpeechStreamPreservesContextError(t *testing.T) {
 			ctx, cancel := test.context()
 			defer cancel()
 			body := &contextReadCloser{ctx: ctx}
-			stream := &miniMaxSpeechStream{
-				ctx:     ctx,
-				body:    body,
-				scanner: bufio.NewScanner(body),
-				cancel:  cancel,
-			}
+			stream := newMiniMaxTestStream(ctx, cancel, body)
 			if _, err := stream.Recv(); !errors.Is(err, test.wantErr) {
 				t.Fatalf("expected %v, got %v", test.wantErr, err)
 			}
 			assertMiniMaxStreamFinished(t, stream)
 		})
+	}
+}
+
+func newMiniMaxTestStream(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser) *miniMaxSpeechStream {
+	return &miniMaxSpeechStream{
+		ctx: ctx, scanner: bufio.NewScanner(body), terminal: newStreamTerminal(cancel, body.Close),
 	}
 }
 

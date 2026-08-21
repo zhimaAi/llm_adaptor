@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/zhimaAi/llm_adaptor/v2/chat"
 	"github.com/zhimaAi/llm_adaptor/v2/embedding"
@@ -49,11 +48,10 @@ func (p *openAICompatibleProvider) createChat(ctx context.Context, selected cred
 	if request == nil || strings.TrimSpace(request.Model) == "" || len(request.Messages) == 0 {
 		return nil, fmt.Errorf("%w: model and messages are required", ErrInvalidRequest)
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	body, err := buildOpenAIChatRequest(p.providerInfo.ID, request, false, nil)
 	if err != nil {
 		return nil, err
 	}
-	body["stream"] = false
 	path := p.chatPath
 	if path == "" {
 		path = ChatCompletionsPath
@@ -79,11 +77,10 @@ func (p *openAICompatibleProvider) streamChat(ctx context.Context, selected cred
 	if request == nil || strings.TrimSpace(request.Model) == "" || len(request.Messages) == 0 {
 		return nil, fmt.Errorf("%w: model and messages are required", ErrInvalidRequest)
 	}
-	body, err := mergeExtraBody(request, request.ExtraBody)
+	body, err := buildOpenAIChatRequest(p.providerInfo.ID, &request.CreateRequest, true, request.StreamOptions)
 	if err != nil {
 		return nil, err
 	}
-	body["stream"] = true
 	path := p.chatPath
 	if path == "" {
 		path = ChatCompletionsPath
@@ -94,7 +91,7 @@ func (p *openAICompatibleProvider) streamChat(ctx context.Context, selected cred
 		cancel()
 		return nil, err
 	}
-	return newThinkTagStream(newOpenAIChatStream(response.Body, cancel, p.providerInfo.ID, selected.hint)), nil
+	return newThinkTagStream(newOpenAIChatStream(streamContext, response.Body, cancel, p.providerInfo.ID, selected.hint)), nil
 }
 
 func (p *openAICompatibleProvider) createEmbedding(ctx context.Context, selected credential, request *embedding.CreateRequest) (*embedding.CreateResponse, error) {
@@ -265,36 +262,31 @@ func (p *openAICompatibleProvider) doStream(ctx context.Context, selected creden
 }
 
 type openAIChatStream struct {
-	body      io.ReadCloser
-	scanner   *bufio.Scanner
-	closeOnce sync.Once
-	finished  bool
-	cancel    context.CancelFunc
-	provider  Provider
-	hint      string
+	ctx      context.Context
+	scanner  *bufio.Scanner
+	terminal *streamTerminal
+	provider Provider
+	hint     string
 }
 
 type openAIImageStream struct {
-	ctx       context.Context
-	body      io.ReadCloser
-	scanner   *bufio.Scanner
-	closeOnce sync.Once
-	finished  bool
-	cancel    context.CancelFunc
-	provider  Provider
-	hint      string
-	config    ClientConfig
-	request   image.GenerateRequest
+	ctx      context.Context
+	scanner  *bufio.Scanner
+	terminal *streamTerminal
+	provider Provider
+	hint     string
+	config   ClientConfig
+	request  image.GenerateRequest
 }
 
 func newOpenAIImageStream(ctx context.Context, body io.ReadCloser, cancel context.CancelFunc, config ClientConfig, provider Provider, hint string, request image.GenerateRequest) *openAIImageStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
-	return &openAIImageStream{ctx: ctx, body: body, scanner: scanner, cancel: cancel, config: config, provider: provider, hint: hint, request: request}
+	return &openAIImageStream{ctx: ctx, scanner: scanner, terminal: newStreamTerminal(cancel, body.Close), config: config, provider: provider, hint: hint, request: request}
 }
 
 func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
-	if s.finished {
+	if s.terminal.isDone() {
 		return nil, io.EOF
 	}
 	for s.scanner.Scan() {
@@ -304,23 +296,22 @@ func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
 		}
 		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 		if bytes.Equal(line, []byte("[DONE]")) {
-			s.finished = true
+			s.terminal.finish()
 			return nil, io.EOF
 		}
 		if !isImagePartialFailure(line) {
 			if err := decodeStreamAPIError(s.provider, s.hint, line); err != nil {
-				s.finished = true
-				return nil, err
+				return nil, s.terminal.fail(s.ctx, err)
 			}
 		}
 		chunk := &image.StreamChunk{}
 		if err := json.Unmarshal(line, chunk); err != nil {
-			return nil, err
+			return nil, s.terminal.fail(s.ctx, err)
 		}
 		if chunk.URL != "" || chunk.B64JSON != "" {
 			data := image.Data{URL: chunk.URL, B64JSON: chunk.B64JSON}
 			if err := normalizeImageData(s.ctx, s.config, s.provider, s.hint, &s.request, &data); err != nil {
-				return nil, err
+				return nil, s.terminal.fail(s.ctx, err)
 			}
 			chunk.URL, chunk.B64JSON, chunk.Format, chunk.MIMEType = data.URL, data.B64JSON, data.Format, data.MIMEType
 		}
@@ -329,9 +320,15 @@ func (s *openAIImageStream) Recv() (*image.StreamChunk, error) {
 		return chunk, nil
 	}
 	if err := s.scanner.Err(); err != nil {
-		return nil, err
+		return nil, s.terminal.fail(s.ctx, err)
 	}
-	s.finished = true
+	if s.terminal.isDone() {
+		return nil, io.EOF
+	}
+	if s.ctx != nil && s.ctx.Err() != nil {
+		return nil, s.terminal.fail(s.ctx, s.ctx.Err())
+	}
+	s.terminal.finish()
 	return nil, io.EOF
 }
 
@@ -343,25 +340,17 @@ func isImagePartialFailure(raw []byte) bool {
 }
 
 func (s *openAIImageStream) Close() error {
-	var err error
-	s.closeOnce.Do(func() {
-		s.finished = true
-		if s.cancel != nil {
-			s.cancel()
-		}
-		err = s.body.Close()
-	})
-	return err
+	return s.terminal.close()
 }
 
-func newOpenAIChatStream(body io.ReadCloser, cancel context.CancelFunc, provider Provider, hint string) *openAIChatStream {
+func newOpenAIChatStream(ctx context.Context, body io.ReadCloser, cancel context.CancelFunc, provider Provider, hint string) *openAIChatStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
-	return &openAIChatStream{body: body, scanner: scanner, cancel: cancel, provider: provider, hint: hint}
+	return &openAIChatStream{ctx: ctx, scanner: scanner, terminal: newStreamTerminal(cancel, body.Close), provider: provider, hint: hint}
 }
 
 func (s *openAIChatStream) Recv() (*chat.StreamChunk, error) {
-	if s.finished {
+	if s.terminal.isDone() {
 		return nil, io.EOF
 	}
 	for s.scanner.Scan() {
@@ -371,38 +360,35 @@ func (s *openAIChatStream) Recv() (*chat.StreamChunk, error) {
 		}
 		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 		if bytes.Equal(line, []byte("[DONE]")) {
-			s.finished = true
+			s.terminal.finish()
 			return nil, io.EOF
 		}
 		if err := decodeStreamAPIError(s.provider, s.hint, line); err != nil {
-			s.finished = true
-			return nil, err
+			return nil, s.terminal.fail(s.ctx, err)
 		}
 		chunk := &chat.StreamChunk{}
 		if err := json.Unmarshal(line, chunk); err != nil {
-			return nil, err
+			return nil, s.terminal.fail(s.ctx, err)
 		}
 		chunk.RawResponse = append(chunk.RawResponse[:0], line...)
 		chunk.ExtraFields = extractExtraFields(line, "id", "object", "created", "model", "system_fingerprint", "service_tier", "choices", "usage")
 		return chunk, nil
 	}
 	if err := s.scanner.Err(); err != nil {
-		return nil, err
+		return nil, s.terminal.fail(s.ctx, err)
 	}
-	s.finished = true
+	if s.terminal.isDone() {
+		return nil, io.EOF
+	}
+	if s.ctx != nil && s.ctx.Err() != nil {
+		return nil, s.terminal.fail(s.ctx, s.ctx.Err())
+	}
+	s.terminal.finish()
 	return nil, io.EOF
 }
 
 func (s *openAIChatStream) Close() error {
-	var err error
-	s.closeOnce.Do(func() {
-		s.finished = true
-		if s.cancel != nil {
-			s.cancel()
-		}
-		err = s.body.Close()
-	})
-	return err
+	return s.terminal.close()
 }
 
 var _ chatProvider = (*openAICompatibleProvider)(nil)
