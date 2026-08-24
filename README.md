@@ -139,6 +139,12 @@ resp, err := client.Rerank.Create(ctx, &rerank.CreateRequest{
 
 阿里、BAAI、Cohere、Jina、SiliconFlow 和 Xinference 的私有字段与响应均在 Provider 内部转换。
 
+## 不支持参数
+
+公共请求允许调用方始终使用同一套字段。Provider 不支持的公共字段会被静默忽略，不会阻断请求；支持字段的非法值仍返回 `ErrInvalidRequest`。多模态 Part、Tool 或编辑图片中只有部分输入可用时，适配器保留可转换部分；过滤后没有必要输入时返回 `ErrInvalidRequest`，避免发送空消息或空编辑请求。
+
+所有带 `context.Context` 的公开服务入口都接受 `nil`，并将其视为 `context.Background()`。需要主动取消或设置超时时，调用方仍应传入自己的 Context。
+
 ## ExtraBody
 
 五类 JSON 请求均保留 `ExtraBody map[string]any`，用于尚未纳入公共常用字段的高级参数。适配器先构造供应商内部请求，再注入 ExtraBody：
@@ -149,6 +155,8 @@ resp, err := client.Rerank.Create(ctx, &rerank.CreateRequest{
 - 显式的 `nil` 会写入 JSON `null`。
 - 请求、slice、map 和 ExtraBody 均不会被适配器修改。
 - 供应商不接受扩展字段时返回供应商 API 错误。
+
+公共字段被 Provider 忽略后，调用方仍可通过 ExtraBody 显式注入同名供应商字段；ExtraBody 不参与“不支持参数”的过滤。
 
 原生协议可能约定不同的扩展层级：阿里图片的 ExtraBody 注入最终 `parameters`，可覆盖适配器从 `N` 等公共字段推导出的参数；其他当前请求默认覆盖最终 Body 顶层。
 

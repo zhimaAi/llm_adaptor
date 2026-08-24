@@ -4,7 +4,6 @@ package llm
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -135,15 +134,18 @@ func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stre
 	if err != nil {
 		return nil, err
 	}
-	tools := make([]openAIToolWire, len(request.Tools))
-	for index, tool := range request.Tools {
-		tools[index] = openAIToolWire{
+	tools := make([]openAIToolWire, 0, len(request.Tools))
+	for _, tool := range request.Tools {
+		if tool.Type != "" && tool.Type != "function" {
+			continue
+		}
+		tools = append(tools, openAIToolWire{
 			Type: tool.Type,
 			Function: openAIFunctionDefinitionWire{
 				Name: tool.Function.Name, Description: tool.Function.Description,
 				Parameters: append(json.RawMessage(nil), tool.Function.Parameters...), Strict: tool.Function.Strict,
 			},
-		}
+		})
 	}
 	var responseFormat *openAIResponseFormatWire
 	if request.ResponseFormat != nil {
@@ -184,10 +186,6 @@ func buildOpenAIMessages(provider Provider, messages []chat.Message) ([]openAIMe
 	for index, message := range messages {
 		content, err := buildOpenAIMessageContent(provider, message.Content)
 		if err != nil {
-			var unsupported *UnsupportedParameterError
-			if errors.As(err, &unsupported) {
-				return nil, err
-			}
 			return nil, fmt.Errorf("%w: invalid message at index %d: %v", ErrInvalidRequest, index, err)
 		}
 		toolCalls := make([]openAIToolCallWire, len(message.ToolCalls))
@@ -196,6 +194,9 @@ func buildOpenAIMessages(provider Provider, messages []chat.Message) ([]openAIMe
 				ID: toolCall.ID, Type: toolCall.Type,
 				Function: openAIFunctionCallWire{Name: toolCall.Function.Name, Arguments: toolCall.Function.Arguments},
 			}
+		}
+		if content == nil && len(toolCalls) == 0 && message.ToolCallID == "" {
+			return nil, fmt.Errorf("%w: message at index %d contains no supported content", ErrInvalidRequest, index)
 		}
 		result[index] = openAIMessageWire{
 			Role: string(message.Role), Content: content, Name: message.Name,
@@ -215,7 +216,7 @@ func buildOpenAIMessageContent(provider Provider, content chat.MessageContent) (
 	if content.Parts == nil {
 		return nil, nil
 	}
-	parts := make([]openAIContentPartWire, len(content.Parts))
+	parts := make([]openAIContentPartWire, 0, len(content.Parts))
 	for index, part := range content.Parts {
 		wire := openAIContentPartWire{Type: string(part.Type), Text: part.Text}
 		switch part.Type {
@@ -230,7 +231,7 @@ func buildOpenAIMessageContent(provider Provider, content chat.MessageContent) (
 			wire.ImageURL = &openAIImageURLWire{URL: part.ImageURL.URL, Detail: part.ImageURL.Detail}
 		case chat.ContentPartInputAudio:
 			if !providerSupportsInputAudio(provider) {
-				return nil, &UnsupportedParameterError{Provider: provider, Capability: CapabilityChat, Parameter: "messages.content.input_audio"}
+				continue
 			}
 			if part.InputAudio == nil || part.InputAudio.Data == "" || part.InputAudio.Format == "" {
 				return nil, fmt.Errorf("input_audio part at index %d is invalid", index)
@@ -238,16 +239,19 @@ func buildOpenAIMessageContent(provider Provider, content chat.MessageContent) (
 			wire.InputAudio = &openAIInputAudioWire{Data: part.InputAudio.Data, Format: part.InputAudio.Format}
 		case chat.ContentPartVideoURL:
 			if !providerSupportsVideoURL(provider) {
-				return nil, &UnsupportedParameterError{Provider: provider, Capability: CapabilityChat, Parameter: "messages.content.video_url"}
+				continue
 			}
 			if part.VideoURL == nil || strings.TrimSpace(part.VideoURL.URL) == "" {
 				return nil, fmt.Errorf("video_url part at index %d is invalid", index)
 			}
 			wire.VideoURL = &openAIVideoURLWire{URL: part.VideoURL.URL}
 		default:
-			return nil, &UnsupportedParameterError{Provider: provider, Capability: CapabilityChat, Parameter: "messages.content." + string(part.Type)}
+			continue
 		}
-		parts[index] = wire
+		parts = append(parts, wire)
+	}
+	if len(parts) == 0 {
+		return nil, nil
 	}
 	return parts, nil
 }

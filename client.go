@@ -134,7 +134,15 @@ func NewClient(config ClientConfig) (*Client, error) {
 
 type ChatService struct{ client *Client }
 
+func normalizeContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
 func (s ChatService) Create(ctx context.Context, req *chat.CreateRequest) (*chat.CreateResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityChat) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityChat}
 	}
@@ -150,6 +158,7 @@ func (s ChatService) Create(ctx context.Context, req *chat.CreateRequest) (*chat
 }
 
 func (s ChatService) Stream(ctx context.Context, req *chat.StreamRequest) (chat.Stream, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityChat) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityChat}
 	}
@@ -167,6 +176,7 @@ func (s ChatService) Stream(ctx context.Context, req *chat.StreamRequest) (chat.
 type EmbeddingService struct{ client *Client }
 
 func (s EmbeddingService) Create(ctx context.Context, req *embedding.CreateRequest) (*embedding.CreateResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityEmbedding) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityEmbedding}
 	}
@@ -184,6 +194,7 @@ func (s EmbeddingService) Create(ctx context.Context, req *embedding.CreateReque
 type ImageService struct{ client *Client }
 
 func (s ImageService) Generate(ctx context.Context, req *image.GenerateRequest) (*image.GenerateResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityImage) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
 	}
@@ -199,6 +210,7 @@ func (s ImageService) Generate(ctx context.Context, req *image.GenerateRequest) 
 }
 
 func (s ImageService) Stream(ctx context.Context, req *image.StreamRequest) (image.Stream, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityImage) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
 	}
@@ -214,6 +226,7 @@ func (s ImageService) Stream(ctx context.Context, req *image.StreamRequest) (ima
 }
 
 func (s ImageService) Edit(ctx context.Context, req *image.EditRequest) (*image.GenerateResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityImage) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
 	}
@@ -229,6 +242,7 @@ func (s ImageService) Edit(ctx context.Context, req *image.EditRequest) (*image.
 }
 
 func (s ImageService) EditStream(ctx context.Context, req *image.EditStreamRequest) (image.Stream, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityImage) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
 	}
@@ -246,6 +260,7 @@ func (s ImageService) EditStream(ctx context.Context, req *image.EditStreamReque
 type RerankService struct{ client *Client }
 
 func (s RerankService) Create(ctx context.Context, req *rerank.CreateRequest) (*rerank.CreateResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilityRerank) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityRerank}
 	}
@@ -278,6 +293,7 @@ type SpeechService struct {
 }
 
 func (s SpeechService) Create(ctx context.Context, req *speech.CreateRequest) (*speech.CreateResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilitySpeech) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
 	}
@@ -293,6 +309,7 @@ func (s SpeechService) Create(ctx context.Context, req *speech.CreateRequest) (*
 }
 
 func (s SpeechService) Stream(ctx context.Context, req *speech.StreamRequest) (speech.Stream, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilitySpeech) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
 	}
@@ -308,6 +325,7 @@ func (s SpeechService) Stream(ctx context.Context, req *speech.StreamRequest) (s
 }
 
 func (s SpeechService) ListVoices(ctx context.Context, req *speech.ListVoicesRequest) (*speech.ListVoicesResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilitySpeech) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
 	}
@@ -323,6 +341,7 @@ func (s SpeechService) ListVoices(ctx context.Context, req *speech.ListVoicesReq
 }
 
 func (s SpeechService) UploadVoiceFile(ctx context.Context, req *speech.UploadVoiceFileRequest) (*speech.UploadVoiceFileResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilitySpeech) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
 	}
@@ -338,6 +357,7 @@ func (s SpeechService) UploadVoiceFile(ctx context.Context, req *speech.UploadVo
 }
 
 func (s SpeechService) CloneVoice(ctx context.Context, req *speech.CloneVoiceRequest) (*speech.CloneVoiceResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilitySpeech) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
 	}
@@ -355,6 +375,7 @@ func (s SpeechService) CloneVoice(ctx context.Context, req *speech.CloneVoiceReq
 // CloneVoiceFromFiles uploads the source and optional prompt audio, then clones
 // the voice with one pinned credential so account-scoped file IDs stay valid.
 func (s SpeechService) CloneVoiceFromFiles(ctx context.Context, req *speech.CloneVoiceFromFilesRequest) (*speech.CloneVoiceFromFilesResponse, error) {
+	ctx = normalizeContext(ctx)
 	if !s.client.supports(CapabilitySpeech) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilitySpeech}
 	}

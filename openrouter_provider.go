@@ -73,9 +73,6 @@ func (p *openRouterProvider) editImage(ctx context.Context, selected credential,
 	if request == nil || len(request.Images) == 0 {
 		return nil, fmt.Errorf("%w: image edit request and images are required", ErrInvalidRequest)
 	}
-	if request.Mask != nil {
-		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "mask"}
-	}
 	images, err := openRouterInputImages(request.Images)
 	if err != nil {
 		return nil, err
@@ -127,9 +124,6 @@ func (p *openRouterProvider) streamImageEdit(ctx context.Context, selected crede
 	if request == nil || len(request.Images) == 0 {
 		return nil, fmt.Errorf("%w: image edit request and images are required", ErrInvalidRequest)
 	}
-	if request.Mask != nil {
-		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "mask"}
-	}
 	images, err := openRouterInputImages(request.Images)
 	if err != nil {
 		return nil, err
@@ -161,15 +155,6 @@ func buildOpenRouterImageBody(model, prompt string, images []string, n *int, qua
 	if strings.TrimSpace(model) == "" || strings.TrimSpace(prompt) == "" {
 		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
 	}
-	if n != nil && *n != 1 {
-		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "n"}
-	}
-	if quality != "" {
-		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "quality"}
-	}
-	if user != "" {
-		return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "user"}
-	}
 	chatRequest := &chat.CreateRequest{
 		Model:    model,
 		Messages: []chat.Message{{Role: chat.RoleUser, Content: openRouterImageContent(prompt, images)}},
@@ -188,10 +173,16 @@ func buildOpenRouterImageBody(model, prompt string, images []string, n *int, qua
 func openRouterInputImages(inputs []image.Input) ([]string, error) {
 	result := make([]string, 0, len(inputs))
 	for _, input := range inputs {
-		if input.FileID != "" || strings.TrimSpace(input.ImageURL) == "" {
-			return nil, &UnsupportedParameterError{Provider: ProviderOpenRouter, Capability: CapabilityImage, Parameter: "images.file_id"}
+		if strings.TrimSpace(input.ImageURL) != "" {
+			result = append(result, input.ImageURL)
+			continue
 		}
-		result = append(result, input.ImageURL)
+		if input.FileID == "" {
+			return nil, fmt.Errorf("%w: image URL is empty", ErrInvalidRequest)
+		}
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("%w: image edit request contains no supported images", ErrInvalidRequest)
 	}
 	return result, nil
 }

@@ -57,7 +57,6 @@ type ClientConfig struct {
 	APIVersion     string           `json:"api_version,omitempty"`
 	HTTPClient     *http.Client     `json:"-"`
 	DefaultHeaders http.Header      `json:"-"`
-	Extra          map[string]any   `json:"extra,omitempty"`
 }
 
 type ProviderInfo struct {

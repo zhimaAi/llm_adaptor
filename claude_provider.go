@@ -143,25 +143,19 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 	if request == nil || request.Model == "" || len(request.Messages) == 0 {
 		return nil, fmt.Errorf("%w: model and messages are required", ErrInvalidRequest)
 	}
-	for parameter, configured := range map[string]bool{
-		"frequency_penalty": request.FrequencyPenalty != nil,
-		"n":                 request.N != nil,
-		"presence_penalty":  request.PresencePenalty != nil,
-		"response_format":   request.ResponseFormat != nil,
-		"seed":              request.Seed != nil,
-	} {
-		if configured {
-			return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: parameter}
-		}
-	}
 	messages := make([]claudeRequestMessage, 0, len(request.Messages))
 	var system strings.Builder
 	for _, message := range request.Messages {
 		if message.Role == chat.RoleSystem || message.Role == chat.RoleDeveloper {
-			if message.Content.Text == nil || message.Content.Parts != nil || len(message.ToolCalls) > 0 {
-				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "system_message_content"}
+			if message.Content.Text != nil {
+				system.WriteString(*message.Content.Text)
+			} else {
+				for _, part := range message.Content.Parts {
+					if part.Type == chat.ContentPartText {
+						system.WriteString(part.Text)
+					}
+				}
 			}
-			system.WriteString(*message.Content.Text)
 			continue
 		}
 		converted, err := convertClaudeMessage(message)
@@ -169,6 +163,9 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 			return nil, err
 		}
 		messages = append(messages, converted)
+	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("%w: Claude request contains no supported messages", ErrInvalidRequest)
 	}
 	maxTokens := claudeDefaultMaxTokens
 	if request.MaxCompletionTokens != nil {
@@ -196,14 +193,16 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 		tools := make([]map[string]any, 0, len(request.Tools))
 		for _, tool := range request.Tools {
 			if tool.Type != "" && tool.Type != "function" {
-				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "tools." + tool.Type}
+				continue
 			}
 			tools = append(tools, map[string]any{
 				"name": tool.Function.Name, "description": tool.Function.Description,
 				"input_schema": append(json.RawMessage(nil), tool.Function.Parameters...),
 			})
 		}
-		body["tools"] = tools
+		if len(tools) > 0 {
+			body["tools"] = tools
+		}
 	}
 	toolChoice, err := buildClaudeToolChoice(request.ToolChoice, request.ParallelToolCalls)
 	if err != nil {
@@ -232,12 +231,12 @@ func buildClaudeToolChoice(value any, parallel *bool) (map[string]any, error) {
 			case "required":
 				result["type"] = "any"
 			default:
-				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "tool_choice." + choice}
+				// Ignore tool choices Claude cannot represent.
 			}
 		default:
 			raw, err := json.Marshal(value)
 			if err != nil {
-				return nil, fmt.Errorf("%w: invalid tool_choice: %v", ErrInvalidRequest, err)
+				break
 			}
 			var openAIChoice struct {
 				Type     string `json:"type"`
@@ -246,7 +245,7 @@ func buildClaudeToolChoice(value any, parallel *bool) (map[string]any, error) {
 				} `json:"function"`
 			}
 			if err := json.Unmarshal(raw, &openAIChoice); err != nil || openAIChoice.Type != "function" || openAIChoice.Function.Name == "" {
-				return nil, &UnsupportedParameterError{Provider: ProviderClaude, Capability: CapabilityChat, Parameter: "tool_choice"}
+				break
 			}
 			result["type"] = "tool"
 			result["name"] = openAIChoice.Function.Name
@@ -298,7 +297,7 @@ func convertClaudeMessage(message chat.Message) (claudeRequestMessage, error) {
 				}
 				converted.Content = append(converted.Content, claudeRequestContent{Type: claudeContentImage, Source: source})
 			default:
-				return claudeRequestMessage{}, fmt.Errorf("%w: Claude does not support content part %q", ErrInvalidRequest, part.Type)
+				continue
 			}
 		}
 	}
@@ -323,7 +322,7 @@ func convertClaudeMessage(message chat.Message) (claudeRequestMessage, error) {
 		})
 	}
 	if len(converted.Content) == 0 {
-		converted.Content = []claudeRequestContent{{Type: claudeContentText}}
+		return claudeRequestMessage{}, fmt.Errorf("%w: Claude message contains no supported content", ErrInvalidRequest)
 	}
 	return converted, nil
 }

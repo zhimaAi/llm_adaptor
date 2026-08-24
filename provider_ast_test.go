@@ -46,6 +46,34 @@ func TestProvidersDoNotSerializePublicRequestsDirectly(t *testing.T) {
 	}
 }
 
+func TestBuiltInProvidersDoNotRejectUnsupportedPublicParameters(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") || entry.Name() == "errors.go" {
+			continue
+		}
+		path := filepath.Clean(entry.Name())
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			identifier, ok := literal.Type.(*ast.Ident)
+			if ok && identifier.Name == "UnsupportedParameterError" {
+				t.Errorf("%s constructs UnsupportedParameterError; unsupported public fields must be ignored", path)
+			}
+			return true
+		})
+	}
+}
+
 func calledFunctionName(expression ast.Expr) string {
 	switch value := expression.(type) {
 	case *ast.Ident:

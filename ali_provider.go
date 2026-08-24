@@ -120,15 +120,18 @@ func (p *aliProvider) editImage(ctx context.Context, selected credential, reques
 	if request == nil || request.Model == "" || strings.TrimSpace(request.Prompt) == "" || len(request.Images) == 0 {
 		return nil, fmt.Errorf("%w: image model, prompt and images are required", ErrInvalidRequest)
 	}
-	if request.Mask != nil {
-		return nil, &UnsupportedParameterError{Provider: ProviderAli, Capability: CapabilityImage, Parameter: "mask"}
-	}
 	images := make([]string, 0, len(request.Images))
 	for _, input := range request.Images {
-		if input.FileID != "" || strings.TrimSpace(input.ImageURL) == "" {
-			return nil, &UnsupportedParameterError{Provider: ProviderAli, Capability: CapabilityImage, Parameter: "images.file_id"}
+		if strings.TrimSpace(input.ImageURL) != "" {
+			images = append(images, input.ImageURL)
+			continue
 		}
-		images = append(images, input.ImageURL)
+		if input.FileID == "" {
+			return nil, fmt.Errorf("%w: image URL is empty", ErrInvalidRequest)
+		}
+	}
+	if len(images) == 0 {
+		return nil, fmt.Errorf("%w: image edit request contains no supported images", ErrInvalidRequest)
 	}
 	return p.createAliImage(ctx, selected, request.Model, request.Prompt, images, request.N, request.Quality, request.Size, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
 }
