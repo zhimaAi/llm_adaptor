@@ -54,14 +54,14 @@ func TestRestrictedChatParameterProfiles(t *testing.T) {
 		absent   []string
 		present  []string
 	}{
-		{provider: ProviderCohere, absent: []string{"n", "parallel_tool_calls", "tool_choice", "user", "max_completion_tokens"}, present: []string{"tools", "seed"}},
-		{provider: ProviderMiniMax, absent: []string{"n", "parallel_tool_calls", "tool_choice", "user", "seed"}, present: []string{"tools", "max_completion_tokens"}},
+		{provider: ProviderCohere, absent: []string{"n", "parallel_tool_calls", "tool_choice", "user", "max_completion_tokens", "stream_options"}, present: []string{"tools", "seed"}},
+		{provider: ProviderMiniMax, absent: []string{"n", "parallel_tool_calls", "tool_choice", "user", "seed"}, present: []string{"tools", "max_completion_tokens", "stream_options"}},
 		{provider: ProviderSpark, absent: []string{"n", "parallel_tool_calls", "tool_choice", "max_completion_tokens", "seed"}, present: []string{"tools", "user"}},
-		{provider: ProviderOllama, absent: []string{"parallel_tool_calls", "max_completion_tokens"}, present: []string{"n", "tool_choice", "user", "seed"}},
+		{provider: ProviderOllama, absent: []string{"max_completion_tokens", "n", "parallel_tool_calls", "tool_choice", "user"}, present: []string{"tools", "seed", "stream_options"}},
 	}
 	for _, test := range tests {
 		t.Run(string(test.provider), func(t *testing.T) {
-			body, err := buildOpenAIChatRequest(test.provider, request, false, nil)
+			body, err := buildOpenAIChatRequest(test.provider, request, true, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
