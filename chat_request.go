@@ -139,8 +139,12 @@ func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stre
 		if tool.Type != "" && tool.Type != "function" {
 			continue
 		}
+		toolType := tool.Type
+		if toolType == "" {
+			toolType = "function"
+		}
 		tools = append(tools, openAIToolWire{
-			Type: tool.Type,
+			Type: toolType,
 			Function: openAIFunctionDefinitionWire{
 				Name: tool.Function.Name, Description: tool.Function.Description,
 				Parameters: append(json.RawMessage(nil), tool.Function.Parameters...), Strict: tool.Function.Strict,
@@ -154,13 +158,19 @@ func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stre
 			JSONSchema: append(json.RawMessage(nil), request.ResponseFormat.JSONSchema...),
 		}
 	}
+	parallelToolCalls := request.ParallelToolCalls
+	toolChoice := request.ToolChoice
+	if len(tools) == 0 {
+		parallelToolCalls = nil
+		toolChoice = nil
+	}
 	wire := openAIChatWireRequest{
 		Model: request.Model, Messages: messages, FrequencyPenalty: request.FrequencyPenalty,
 		MaxTokens: request.MaxTokens, MaxCompletionTokens: request.MaxCompletionTokens,
-		N: request.N, ParallelToolCalls: request.ParallelToolCalls,
+		N: request.N, ParallelToolCalls: parallelToolCalls,
 		PresencePenalty: request.PresencePenalty, ReasoningEffort: string(request.ReasoningEffort),
 		ResponseFormat: responseFormat, Seed: request.Seed,
-		Stop: request.Stop, Temperature: request.Temperature, ToolChoice: request.ToolChoice,
+		Stop: request.Stop, Temperature: request.Temperature, ToolChoice: toolChoice,
 		Tools: tools, TopP: request.TopP, User: request.User, Stream: stream,
 	}
 	if stream {

@@ -113,7 +113,7 @@ func (p *aliProvider) generateImage(ctx context.Context, selected credential, re
 	if request == nil || request.Model == "" || strings.TrimSpace(request.Prompt) == "" {
 		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
 	}
-	return p.createAliImage(ctx, selected, request.Model, request.Prompt, nil, request.N, request.Quality, request.Size, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
+	return p.createAliImage(ctx, selected, request.Model, request.Prompt, nil, request.N, request.Size, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
 }
 
 func (p *aliProvider) editImage(ctx context.Context, selected credential, request *image.EditRequest) (*image.GenerateResponse, error) {
@@ -133,10 +133,10 @@ func (p *aliProvider) editImage(ctx context.Context, selected credential, reques
 	if len(images) == 0 {
 		return nil, fmt.Errorf("%w: image edit request contains no supported images", ErrInvalidRequest)
 	}
-	return p.createAliImage(ctx, selected, request.Model, request.Prompt, images, request.N, request.Quality, request.Size, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
+	return p.createAliImage(ctx, selected, request.Model, request.Prompt, images, request.N, request.Size, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
 }
 
-func (p *aliProvider) createAliImage(ctx context.Context, selected credential, model, prompt string, images []string, n *int, quality, size, responseFormat, outputFormat string, extraBody map[string]any) (*image.GenerateResponse, error) {
+func (p *aliProvider) createAliImage(ctx context.Context, selected credential, model, prompt string, images []string, n *int, size, responseFormat, outputFormat string, extraBody map[string]any) (*image.GenerateResponse, error) {
 	parameters := map[string]any{}
 	if size != "" {
 		parameters["size"] = size
@@ -144,9 +144,6 @@ func (p *aliProvider) createAliImage(ctx context.Context, selected credential, m
 	if n != nil {
 		parameters["max_images"] = *n
 		parameters["sequential_image_generation"] = *n > 1
-	}
-	if quality != "" {
-		parameters["quality"] = quality
 	}
 	content := []any{map[string]any{"text": prompt}}
 	for _, inputImage := range images {
@@ -189,7 +186,7 @@ func (p *aliProvider) createAliImage(ctx context.Context, selected credential, m
 	if source.Code != "" {
 		return nil, &APIError{Provider: ProviderAli, Code: source.Code, Message: source.Message, RequestID: source.RequestID, CredentialHint: selected.hint, Raw: raw}
 	}
-	result := &image.GenerateResponse{Quality: quality, Size: size, OutputFormat: outputFormat}
+	result := &image.GenerateResponse{Size: size, OutputFormat: outputFormat}
 	for _, choice := range source.Output.Choices {
 		for _, content := range choice.Message.Content {
 			if content.Image != "" {

@@ -45,9 +45,26 @@ func TestOpenAIMessageBuilderRejectsMessageWithoutSupportedContent(t *testing.T)
 	}
 }
 
+func TestOpenAIBuilderDropsToolControlsWhenAllToolsAreUnsupported(t *testing.T) {
+	parallel := true
+	body, err := buildOpenAIChatRequest(ProviderOpenAI, &chat.CreateRequest{
+		Model: "model", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
+		Tools: []chat.Tool{{Type: "future_tool"}}, ToolChoice: "required", ParallelToolCalls: &parallel,
+	}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"tools", "tool_choice", "parallel_tool_calls"} {
+		if _, exists := body[key]; exists {
+			t.Fatalf("filtered tool control %q was sent: %#v", key, body)
+		}
+	}
+}
+
 func TestClaudeBuilderIgnoresUnsupportedPublicFields(t *testing.T) {
 	value := 1
 	seed := int64(2)
+	parallel := true
 	body, err := buildClaudeRequest(&chat.CreateRequest{
 		Model: "claude-sonnet",
 		Messages: []chat.Message{
@@ -59,8 +76,8 @@ func TestClaudeBuilderIgnoresUnsupportedPublicFields(t *testing.T) {
 		},
 		N: &value, FrequencyPenalty: float64Pointer(0.2), PresencePenalty: float64Pointer(0.3),
 		Seed: &seed, ResponseFormat: &chat.ResponseFormat{Type: "json_object"},
-		ToolChoice: "future_choice",
-		Tools:      []chat.Tool{{Type: "future_tool"}},
+		ToolChoice: "future_choice", ParallelToolCalls: &parallel,
+		Tools: []chat.Tool{{Type: "future_tool"}},
 	}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +89,21 @@ func TestClaudeBuilderIgnoresUnsupportedPublicFields(t *testing.T) {
 		if _, exists := body[key]; exists {
 			t.Fatalf("unsupported field %q was sent: %#v", key, body[key])
 		}
+	}
+}
+
+func TestClaudeBuilderRejectsInvalidMixedSystemContent(t *testing.T) {
+	content := chat.TextContent("text")
+	content.Parts = []chat.ContentPart{{Type: chat.ContentPartText, Text: "part"}}
+	_, err := buildClaudeRequest(&chat.CreateRequest{
+		Model: "claude-sonnet",
+		Messages: []chat.Message{
+			{Role: chat.RoleSystem, Content: content},
+			{Role: chat.RoleUser, Content: chat.TextContent("hello")},
+		},
+	}, false)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -139,16 +171,31 @@ func TestAliImageIgnoresUnsupportedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	generate := image.GenerateRequest{Model: "qwen-image", Prompt: "draw", User: "ignored", ExtraBody: map[string]any{"user": "forced"}}
-	if _, err = client.Images.Generate(context.Background(), &generate); err != nil {
+	generate := image.GenerateRequest{Model: "qwen-image", Prompt: "draw", User: "ignored", Quality: "hd", ExtraBody: map[string]any{"user": "forced"}}
+	response, err := client.Images.Generate(context.Background(), &generate)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = client.Images.Stream(context.Background(), &image.StreamRequest{GenerateRequest: generate}); err != nil {
+	if response.Quality != "" {
+		t.Fatalf("unsupported quality was copied to response: %#v", response)
+	}
+	stream, err := client.Images.Stream(context.Background(), &image.StreamRequest{GenerateRequest: generate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chunk.Quality != "" {
+		t.Fatalf("unsupported quality was copied to stream chunk: %#v", chunk)
+	}
+	if err = stream.Close(); err != nil {
 		t.Fatal(err)
 	}
 	mask := image.Input{ImageURL: "https://example.com/mask.png"}
 	edit := image.EditRequest{
-		Model: "qwen-image", Prompt: "edit", User: "ignored", Mask: &mask,
+		Model: "qwen-image", Prompt: "edit", User: "ignored", Quality: "hd", Mask: &mask,
 		Images: []image.Input{{FileID: "unsupported"}, {FileID: "ignored", ImageURL: "https://example.com/input.png"}},
 	}
 	if _, err = client.Images.Edit(context.Background(), &edit); err != nil {
@@ -168,6 +215,9 @@ func TestAliImageIgnoresUnsupportedFields(t *testing.T) {
 	parameters, ok := bodies[0]["parameters"].(map[string]any)
 	if !ok || parameters["user"] != "forced" {
 		t.Fatalf("Ali image ExtraBody was not injected into parameters: %#v", bodies[0])
+	}
+	if _, exists := parameters["quality"]; exists {
+		t.Fatalf("unsupported quality was sent: %#v", parameters)
 	}
 	content := aliImageRequestContent(t, bodies[2])
 	if len(content) != 2 || content[0]["text"] != "edit" || content[1]["image"] != "https://example.com/input.png" {
@@ -190,8 +240,7 @@ func TestAliAndOpenRouterRejectEditWithoutSupportedImages(t *testing.T) {
 }
 
 func TestOpenRouterImageIgnoresUnsupportedFieldsButExtraBodyCanInjectThem(t *testing.T) {
-	n := 4
-	body, err := buildOpenRouterImageBody("model", "draw", nil, &n, "hd", "1024x1024", "ignored", nil, false)
+	body, err := buildOpenRouterImageBody("model", "draw", nil, "1024x1024", nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +249,7 @@ func TestOpenRouterImageIgnoresUnsupportedFieldsButExtraBodyCanInjectThem(t *tes
 			t.Fatalf("unsupported field %q was sent: %#v", key, body)
 		}
 	}
-	body, err = buildOpenRouterImageBody("model", "draw", nil, &n, "hd", "1024x1024", "ignored", map[string]any{
+	body, err = buildOpenRouterImageBody("model", "draw", nil, "1024x1024", map[string]any{
 		"n": 3, "quality": "forced", "user": "forced",
 	}, false)
 	if err != nil {

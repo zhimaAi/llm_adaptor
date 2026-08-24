@@ -66,7 +66,7 @@ func (p *openRouterProvider) generateImage(ctx context.Context, selected credent
 	if request == nil {
 		return nil, fmt.Errorf("%w: image request is nil", ErrInvalidRequest)
 	}
-	return p.createOpenRouterImage(ctx, selected, request.Model, request.Prompt, nil, request.N, request.Quality, request.Size, request.User, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
+	return p.createOpenRouterImage(ctx, selected, request.Model, request.Prompt, nil, request.Size, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
 }
 
 func (p *openRouterProvider) editImage(ctx context.Context, selected credential, request *image.EditRequest) (*image.GenerateResponse, error) {
@@ -77,11 +77,11 @@ func (p *openRouterProvider) editImage(ctx context.Context, selected credential,
 	if err != nil {
 		return nil, err
 	}
-	return p.createOpenRouterImage(ctx, selected, request.Model, request.Prompt, images, request.N, request.Quality, request.Size, request.User, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
+	return p.createOpenRouterImage(ctx, selected, request.Model, request.Prompt, images, request.Size, request.ResponseFormat, request.OutputFormat, request.ExtraBody)
 }
 
-func (p *openRouterProvider) createOpenRouterImage(ctx context.Context, selected credential, model, prompt string, images []string, n *int, quality, size, user, responseFormat, outputFormat string, extraBody map[string]any) (*image.GenerateResponse, error) {
-	body, err := buildOpenRouterImageBody(model, prompt, images, n, quality, size, user, extraBody, false)
+func (p *openRouterProvider) createOpenRouterImage(ctx context.Context, selected credential, model, prompt string, images []string, size, responseFormat, outputFormat string, extraBody map[string]any) (*image.GenerateResponse, error) {
+	body, err := buildOpenRouterImageBody(model, prompt, images, size, extraBody, false)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (p *openRouterProvider) createOpenRouterImage(ctx context.Context, selected
 	if err := json.Unmarshal(raw, &source); err != nil {
 		return nil, err
 	}
-	result := &image.GenerateResponse{Created: source.Created, Quality: quality, Size: size, OutputFormat: outputFormat}
+	result := &image.GenerateResponse{Created: source.Created, Size: size, OutputFormat: outputFormat}
 	for _, choice := range source.Choices {
 		for _, generated := range choice.Message.Images {
 			if generated.ImageURL.URL != "" {
@@ -117,7 +117,7 @@ func (p *openRouterProvider) streamImage(ctx context.Context, selected credentia
 	if request == nil {
 		return nil, fmt.Errorf("%w: image request is nil", ErrInvalidRequest)
 	}
-	return p.createOpenRouterImageStream(ctx, selected, request.Model, request.Prompt, nil, request.N, request.Quality, request.Size, request.User, request.OutputFormat, request.ExtraBody)
+	return p.createOpenRouterImageStream(ctx, selected, request.Model, request.Prompt, nil, request.Size, request.OutputFormat, request.ExtraBody)
 }
 
 func (p *openRouterProvider) streamImageEdit(ctx context.Context, selected credential, request *image.EditStreamRequest) (image.Stream, error) {
@@ -128,11 +128,11 @@ func (p *openRouterProvider) streamImageEdit(ctx context.Context, selected crede
 	if err != nil {
 		return nil, err
 	}
-	return p.createOpenRouterImageStream(ctx, selected, request.Model, request.Prompt, images, request.N, request.Quality, request.Size, request.User, request.OutputFormat, request.ExtraBody)
+	return p.createOpenRouterImageStream(ctx, selected, request.Model, request.Prompt, images, request.Size, request.OutputFormat, request.ExtraBody)
 }
 
-func (p *openRouterProvider) createOpenRouterImageStream(ctx context.Context, selected credential, model, prompt string, images []string, n *int, quality, size, user, outputFormat string, extraBody map[string]any) (image.Stream, error) {
-	body, err := buildOpenRouterImageBody(model, prompt, images, n, quality, size, user, extraBody, true)
+func (p *openRouterProvider) createOpenRouterImageStream(ctx context.Context, selected credential, model, prompt string, images []string, size, outputFormat string, extraBody map[string]any) (image.Stream, error) {
+	body, err := buildOpenRouterImageBody(model, prompt, images, size, extraBody, true)
 	if err != nil {
 		return nil, err
 	}
@@ -147,11 +147,11 @@ func (p *openRouterProvider) createOpenRouterImageStream(ctx context.Context, se
 	return &openRouterImageStream{
 		ctx: streamContext, scanner: scanner, terminal: newStreamTerminal(cancel, response.Body.Close),
 		config: p.config, selected: selected, request: imageRequestOptions{ResponseFormat: imageResponseFormatBase64, OutputFormat: outputFormat},
-		quality: quality, size: size,
+		size: size,
 	}, nil
 }
 
-func buildOpenRouterImageBody(model, prompt string, images []string, n *int, quality, size, user string, extraBody map[string]any, stream bool) (map[string]any, error) {
+func buildOpenRouterImageBody(model, prompt string, images []string, size string, extraBody map[string]any, stream bool) (map[string]any, error) {
 	if strings.TrimSpace(model) == "" || strings.TrimSpace(prompt) == "" {
 		return nil, fmt.Errorf("%w: image model and prompt are required", ErrInvalidRequest)
 	}
@@ -194,7 +194,6 @@ type openRouterImageStream struct {
 	config   ClientConfig
 	selected credential
 	request  imageRequestOptions
-	quality  string
 	size     string
 	pending  []*image.StreamChunk
 }
@@ -243,13 +242,13 @@ func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
 				}
 				s.pending = append(s.pending, &image.StreamChunk{
 					B64JSON: data.B64JSON, PartialImageIndex: len(s.pending), Created: wire.Created,
-					OutputFormat: format, Quality: s.quality, Size: s.size,
+					OutputFormat: format, Size: s.size,
 				})
 			}
 		}
 		if wire.Usage != nil {
 			if len(s.pending) == 0 {
-				s.pending = append(s.pending, &image.StreamChunk{Created: wire.Created, OutputFormat: normalizeImageFormat(s.request.OutputFormat), Quality: s.quality, Size: s.size})
+				s.pending = append(s.pending, &image.StreamChunk{Created: wire.Created, OutputFormat: normalizeImageFormat(s.request.OutputFormat), Size: s.size})
 			}
 			s.pending[0].Usage = usage
 		}

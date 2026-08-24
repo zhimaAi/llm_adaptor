@@ -147,6 +147,9 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 	var system strings.Builder
 	for _, message := range request.Messages {
 		if message.Role == chat.RoleSystem || message.Role == chat.RoleDeveloper {
+			if message.Content.Text != nil && message.Content.Parts != nil {
+				return nil, fmt.Errorf("%w: Claude system content text and parts cannot both be set", ErrInvalidRequest)
+			}
 			if message.Content.Text != nil {
 				system.WriteString(*message.Content.Text)
 			} else {
@@ -204,12 +207,14 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 			body["tools"] = tools
 		}
 	}
-	toolChoice, err := buildClaudeToolChoice(request.ToolChoice, request.ParallelToolCalls)
-	if err != nil {
-		return nil, err
-	}
-	if toolChoice != nil {
-		body["tool_choice"] = toolChoice
+	if _, hasTools := body["tools"]; hasTools {
+		toolChoice, err := buildClaudeToolChoice(request.ToolChoice, request.ParallelToolCalls)
+		if err != nil {
+			return nil, err
+		}
+		if toolChoice != nil {
+			body["tool_choice"] = toolChoice
+		}
 	}
 	if err := applyClaudeReasoning(request.Model, request.ReasoningEffort, body); err != nil {
 		return nil, err

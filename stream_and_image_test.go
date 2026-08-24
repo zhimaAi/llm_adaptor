@@ -91,6 +91,12 @@ func TestOpenRouterImageStreamConvertsDeltaImages(t *testing.T) {
 			t.Errorf("missing typed modalities or default usage: %#v", body)
 			return
 		}
+		for _, key := range []string{"n", "quality", "user"} {
+			if _, exists := body[key]; exists {
+				t.Errorf("unsupported field %q was sent: %#v", key, body)
+				return
+			}
+		}
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, `data: {"id":"id","choices":[{"index":0,"delta":{"images":[{"type":"image_url","image_url":{"url":"data:image/png;base64,`+encoded+`"}}]}}]}`+"\n\n")
 		_, _ = io.WriteString(writer, "data: [DONE]\n\n")
@@ -100,7 +106,10 @@ func TestOpenRouterImageStreamConvertsDeltaImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream, err := client.Images.Stream(context.Background(), &image.StreamRequest{GenerateRequest: image.GenerateRequest{Model: "model", Prompt: "draw", ResponseFormat: "b64_json"}})
+	n := 4
+	stream, err := client.Images.Stream(context.Background(), &image.StreamRequest{GenerateRequest: image.GenerateRequest{
+		Model: "model", Prompt: "draw", N: &n, Quality: "hd", User: "ignored", ResponseFormat: "b64_json",
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +118,7 @@ func TestOpenRouterImageStreamConvertsDeltaImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if chunk.B64JSON != encoded || chunk.OutputFormat != "png" {
+	if chunk.B64JSON != encoded || chunk.OutputFormat != "png" || chunk.Quality != "" {
 		t.Fatalf("unexpected image chunk: %#v", chunk)
 	}
 }
