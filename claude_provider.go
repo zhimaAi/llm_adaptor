@@ -161,6 +161,9 @@ func buildClaudeRequest(request *chat.CreateRequest, stream bool) (map[string]an
 			}
 			continue
 		}
+		if message.Role != chat.RoleUser && message.Role != chat.RoleAssistant && message.Role != chat.RoleTool {
+			continue
+		}
 		converted, err := convertClaudeMessage(message)
 		if err != nil {
 			return nil, err
@@ -275,11 +278,20 @@ func convertClaudeMessage(message chat.Message) (claudeRequestMessage, error) {
 			return claudeRequestMessage{}, fmt.Errorf("%w: Claude tool result requires tool_call_id", ErrInvalidRequest)
 		}
 		converted.Role = claudeRoleUser
-		content := ""
-		if message.Content.Text != nil {
-			content = *message.Content.Text
+		if message.Content.Text != nil && message.Content.Parts != nil {
+			return claudeRequestMessage{}, fmt.Errorf("%w: Claude tool result text and parts cannot both be set", ErrInvalidRequest)
 		}
-		converted.Content = []claudeRequestContent{{Type: claudeContentToolResult, ToolUseID: message.ToolCallID, Content: content}}
+		var content strings.Builder
+		if message.Content.Text != nil {
+			content.WriteString(*message.Content.Text)
+		} else {
+			for _, part := range message.Content.Parts {
+				if part.Type == chat.ContentPartText {
+					content.WriteString(part.Text)
+				}
+			}
+		}
+		converted.Content = []claudeRequestContent{{Type: claudeContentToolResult, ToolUseID: message.ToolCallID, Content: content.String()}}
 		return converted, nil
 	}
 	if converted.Role != claudeRoleUser && converted.Role != claudeRoleAssistant {
@@ -307,6 +319,9 @@ func convertClaudeMessage(message chat.Message) (claudeRequestMessage, error) {
 		}
 	}
 	for _, call := range message.ToolCalls {
+		if call.Type != "" && call.Type != "function" {
+			continue
+		}
 		if converted.Role != claudeRoleAssistant {
 			return claudeRequestMessage{}, fmt.Errorf("%w: Claude tool_use must be in an assistant message", ErrInvalidRequest)
 		}

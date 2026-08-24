@@ -107,6 +107,50 @@ func TestClaudeBuilderRejectsInvalidMixedSystemContent(t *testing.T) {
 	}
 }
 
+func TestClaudeBuilderIgnoresUnsupportedRolesAndToolCalls(t *testing.T) {
+	body, err := buildClaudeRequest(&chat.CreateRequest{
+		Model: "claude-sonnet",
+		Messages: []chat.Message{
+			{Role: chat.Role("future_role"), Content: chat.TextContent("ignored")},
+			{Role: chat.RoleUser, Content: chat.TextContent("hello")},
+			{Role: chat.RoleAssistant, ToolCalls: []chat.ToolCall{{Type: "future_tool"}}, Content: chat.TextContent("kept")},
+		},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, ok := body["messages"].([]claudeRequestMessage)
+	if !ok || len(messages) != 2 {
+		t.Fatalf("messages = %#v", body["messages"])
+	}
+	if len(messages[1].Content) != 1 || messages[1].Content[0].Type != claudeContentText || messages[1].Content[0].Text != "kept" {
+		t.Fatalf("assistant content = %#v", messages[1].Content)
+	}
+
+	_, err = buildClaudeRequest(&chat.CreateRequest{
+		Model: "claude-sonnet", Messages: []chat.Message{{Role: chat.Role("future_role"), Content: chat.TextContent("ignored")}},
+	}, false)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestClaudeToolResultKeepsSupportedTextParts(t *testing.T) {
+	converted, err := convertClaudeMessage(chat.Message{
+		Role: chat.RoleTool, ToolCallID: "call-1",
+		Content: chat.PartsContent(
+			chat.ContentPart{Type: chat.ContentPartText, Text: "kept"},
+			chat.ContentPart{Type: chat.ContentPartVideoURL, VideoURL: &chat.VideoURL{URL: "https://example.com/video.mp4"}},
+		),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(converted.Content) != 1 || converted.Content[0].Content != "kept" {
+		t.Fatalf("content = %#v", converted.Content)
+	}
+}
+
 func TestGeminiEmbeddingIgnoresUnsupportedFieldsButExtraBodyCanInjectThem(t *testing.T) {
 	var bodies []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
