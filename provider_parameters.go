@@ -44,7 +44,7 @@ var chatProviderParameterFields = map[Provider]requestFieldSet{
 	ProviderLingYiWanWu:    requestFields("frequency_penalty", "max_tokens", "presence_penalty", "response_format", "stop", "temperature", "tool_choice", "tools", "top_p", "stream_options"),
 	ProviderMiniMax:        requestFields("max_tokens", "max_completion_tokens", "temperature", "tools", "top_p", "stream_options"),
 	ProviderMoonshot:       requestFields("frequency_penalty", "max_tokens", "n", "presence_penalty", "response_format", "stop", "temperature", "tool_choice", "tools", "top_p", "stream_options"),
-	ProviderOllama:         requestFieldsWithout(allOpenAIChatFields, "max_completion_tokens", "n", "parallel_tool_calls", "tool_choice", "user"),
+	ProviderOllama:         requestFieldsWithout(allOpenAIChatFields, "max_completion_tokens", "parallel_tool_calls"),
 	ProviderOpenAI:         allOpenAIChatFields,
 	ProviderOpenCompatible: allOpenAIChatFields,
 	ProviderOpenRouter:     allOpenAIChatFields,

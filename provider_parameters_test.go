@@ -57,7 +57,7 @@ func TestRestrictedChatParameterProfiles(t *testing.T) {
 		{provider: ProviderCohere, absent: []string{"n", "parallel_tool_calls", "tool_choice", "user", "max_completion_tokens", "stream_options"}, present: []string{"tools", "seed"}},
 		{provider: ProviderMiniMax, absent: []string{"n", "parallel_tool_calls", "tool_choice", "user", "seed"}, present: []string{"tools", "max_completion_tokens", "stream_options"}},
 		{provider: ProviderSpark, absent: []string{"n", "parallel_tool_calls", "tool_choice", "max_completion_tokens", "seed"}, present: []string{"tools", "user"}},
-		{provider: ProviderOllama, absent: []string{"max_completion_tokens", "n", "parallel_tool_calls", "tool_choice", "user"}, present: []string{"tools", "seed", "stream_options"}},
+		{provider: ProviderOllama, absent: []string{"max_completion_tokens", "parallel_tool_calls"}, present: []string{"n", "tool_choice", "tools", "user", "seed", "stream_options"}},
 	}
 	for _, test := range tests {
 		t.Run(string(test.provider), func(t *testing.T) {
