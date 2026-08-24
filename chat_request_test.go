@@ -246,6 +246,7 @@ func TestClaudeReasoningEffortDowngrade(t *testing.T) {
 		{model: "claude-opus-4-6", effort: chat.ReasoningEffortXHigh, want: "high"},
 		{model: "claude-opus-4-6", effort: chat.ReasoningEffortMax, want: "max"},
 		{model: "claude-opus-4-7", effort: chat.ReasoningEffortXHigh, want: "xhigh"},
+		{model: "claude-opus-4-5", effort: chat.ReasoningEffortMax, want: "high"},
 		{model: "claude-future", effort: "future", want: "future"},
 	}
 	for _, test := range tests {
@@ -283,6 +284,15 @@ func TestClaudeReasoningRequestUsesEffortCapability(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertBodyValue(t, body, "output_config", map[string]any{"effort": "future"})
+
+	request.Model = "claude-opus-4-5"
+	request.ReasoningEffort = chat.ReasoningEffortMedium
+	body, err = buildClaudeRequest(request, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBodyValue(t, body, "thinking", map[string]any{"type": "enabled", "budget_tokens": claudeLegacyThinkingBudget})
+	assertBodyValue(t, body, "output_config", map[string]any{"effort": "medium"})
 }
 
 func assertBodyValue(t *testing.T, body map[string]any, key string, want any) {

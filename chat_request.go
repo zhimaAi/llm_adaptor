@@ -24,29 +24,27 @@ var baiduEnableThinkingModelPrefixes = []string{
 	"qwen3-", "ernie-4.5-turbo-vl", "ernie-4.5-vl-28b-a3b", "ernie-5.0-thinking-preview",
 }
 
-var claudeAdaptiveThinkingModelPrefixes = []string{
-	"claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4-8",
-	"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
+type claudeReasoningCapability struct {
+	prefix           string
+	adaptiveThinking bool
+	effort           bool
+	cannotDisable    bool
+	defaultSampling  bool
+	supportsXHigh    bool
+	supportsMax      bool
 }
 
-var claudeCannotDisableThinkingModelPrefixes = []string{
-	"claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
-}
-
-var claudeDefaultSamplingModelPrefixes = []string{
-	"claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
-	"claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
-}
-
-var claudeXHighEffortModelPrefixes = []string{
-	"claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
-	"claude-fable-5", "claude-mythos-5",
-}
-
-var claudeMaxEffortModelPrefixes = []string{
-	"claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4-8",
-	"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5",
-	"claude-mythos-preview",
+var claudeReasoningCapabilities = []claudeReasoningCapability{
+	{prefix: "claude-fable-5", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-mythos-5", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-mythos-preview", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsMax: true},
+	{prefix: "claude-opus-5", adaptiveThinking: true, effort: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-sonnet-5", adaptiveThinking: true, effort: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-opus-4-8", adaptiveThinking: true, effort: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-opus-4-7", adaptiveThinking: true, effort: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-opus-4-6", adaptiveThinking: true, effort: true, supportsMax: true},
+	{prefix: "claude-sonnet-4-6", adaptiveThinking: true, effort: true, supportsMax: true},
+	{prefix: "claude-opus-4-5", effort: true},
 }
 
 type openAIChatWireRequest struct {
@@ -364,30 +362,29 @@ func applyClaudeReasoning(model string, effort chat.ReasoningEffort, body map[st
 	if effort == "" {
 		return nil
 	}
-	cannotDisable := hasModelPrefix(model, claudeCannotDisableThinkingModelPrefixes...)
+	capability := claudeReasoningCapabilityForModel(model)
 	if effort == chat.ReasoningEffortNone {
-		if !cannotDisable {
+		if !capability.cannotDisable {
 			body["thinking"] = map[string]any{"type": chatThinkingDisabled}
 		} else {
 			body["thinking"] = map[string]any{"type": chatThinkingAdaptive, "display": chatThinkingDisplay}
 			body["output_config"] = map[string]any{"effort": string(chat.ReasoningEffortLow)}
 		}
-		if cannotDisable || hasModelPrefix(model, claudeDefaultSamplingModelPrefixes...) {
+		if capability.cannotDisable || capability.defaultSampling {
 			delete(body, "temperature")
 		}
 		return nil
 	}
-	if hasModelPrefix(model, claudeAdaptiveThinkingModelPrefixes...) {
+	if capability.adaptiveThinking {
 		body["thinking"] = map[string]any{"type": chatThinkingAdaptive, "display": chatThinkingDisplay}
-		body["output_config"] = map[string]any{"effort": claudeReasoningEffort(model, effort)}
 	} else {
 		body["thinking"] = map[string]any{"type": chatThinkingEnabled, "budget_tokens": claudeLegacyThinkingBudget}
-		if !isKnownReasoningEffort(effort) {
-			body["output_config"] = map[string]any{"effort": string(effort)}
-		}
 		if maxTokens, ok := numberAsInt(body["max_tokens"]); ok && maxTokens <= claudeLegacyThinkingBudget {
 			body["max_tokens"] = claudeLegacyMinimumTokens
 		}
+	}
+	if capability.effort || !isKnownReasoningEffort(effort) {
+		body["output_config"] = map[string]any{"effort": claudeReasoningEffort(model, effort)}
 	}
 	delete(body, "temperature")
 	return nil
@@ -415,22 +412,33 @@ func claudeReasoningEffort(model string, effort chat.ReasoningEffort) string {
 	if !isKnownReasoningEffort(effort) {
 		return string(effort)
 	}
+	capability := claudeReasoningCapabilityForModel(model)
 	switch effort {
 	case chat.ReasoningEffortMinimal:
 		return string(chat.ReasoningEffortLow)
 	case chat.ReasoningEffortXHigh:
-		if !hasModelPrefix(model, claudeXHighEffortModelPrefixes...) {
+		if !capability.supportsXHigh {
 			return string(chat.ReasoningEffortHigh)
 		}
 	case chat.ReasoningEffortMax:
-		if !hasModelPrefix(model, claudeMaxEffortModelPrefixes...) {
-			if hasModelPrefix(model, claudeXHighEffortModelPrefixes...) {
+		if !capability.supportsMax {
+			if capability.supportsXHigh {
 				return string(chat.ReasoningEffortXHigh)
 			}
 			return string(chat.ReasoningEffortHigh)
 		}
 	}
 	return string(effort)
+}
+
+func claudeReasoningCapabilityForModel(model string) claudeReasoningCapability {
+	model = strings.ToLower(strings.TrimSpace(model))
+	for _, capability := range claudeReasoningCapabilities {
+		if strings.HasPrefix(model, capability.prefix) {
+			return capability
+		}
+	}
+	return claudeReasoningCapability{}
 }
 
 func moveMaxTokensToCompletionTokens(body map[string]any) {
