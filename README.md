@@ -30,7 +30,13 @@ client, err := llm.NewClient(llm.ClientConfig{
 })
 ```
 
-所有 Provider 都允许显式传入 `BaseURL`。Gemini、阿里云和 Cohere 同时包含 OpenAI-compatible 与原生能力；需要通过自定义网关覆盖两类接口时，分别传入 `BaseURL` 和 `ServiceBaseURL`，两者都会完整保留自定义子路径。OpenAI Agent、Xinference 使用 `APIVersion` 补齐版本路径，Ollama 兼容传入服务根地址或已经包含 `/v1` 的地址。
+所有 Provider 都允许显式传入 `BaseURL`。Gemini、阿里云和 Cohere 同时包含 OpenAI-compatible 与原生能力；需要通过自定义网关覆盖两类接口时，分别传入 `BaseURL` 和 `ServiceBaseURL`，两者都会完整保留自定义子路径。
+
+- `ProviderOpenCompatible` 是 v2 唯一的通用 OpenAI-compatible 入口，`BaseURL` 必须由调用方传入，并且视为已经包含版本路径的完整地址。v2 删除了 `ProviderOpenAIAgent`，不提供源码兼容别名。
+- Azure 接受资源根地址或已经包含 `/openai/v1` 的地址，适配器幂等补齐 `/openai/v1`；请求使用 Body 中的 `model` 作为 Deployment Name，并通过 `api-key` Header 鉴权。`APIVersion` 对 Azure 不生效。
+- `APIVersion` 目前仅用于 Xinference 等仍需要由适配器补版本路径的 Provider；Ollama 兼容传入服务根地址或已经包含 `/v1` 的地址。
+
+适配器当前注册 25 个 Provider，其中 `ProviderVoyage` 仅提供 Embedding；排除 Voyage 后是 ChatWiki 配置的 24 个服务商。ChatWiki 产品层的 OpenAI Agent 对应 `ProviderOpenCompatible`，不是额外的适配器 Provider。
 
 APIKey 支持：
 
@@ -142,6 +148,8 @@ resp, err := client.Rerank.Create(ctx, &rerank.CreateRequest{
 ## 不支持参数
 
 公共请求允许调用方始终使用同一套字段。Provider 不支持的公共字段会被静默忽略，不会阻断请求；支持字段的非法值仍返回 `ErrInvalidRequest`。多模态 Part、Tool 或编辑图片中只有部分输入可用时，适配器保留可转换部分；过滤后没有必要输入时返回 `ErrInvalidRequest`，避免发送空消息或空编辑请求。
+
+Chat、Embedding 和 Image 的通用 Builder 都通过 Provider 参数支持矩阵提取字段。OpenAI、Azure v1、OpenCompatible、302.AI 和 OpenRouter 使用完整的 OpenAI 常用字段；Cohere、MiniMax、星火、Ollama 等兼容协议只发送其明确支持的字段。原生协议 Provider 继续使用自己的内部请求 DTO。所有 Provider 都不会直接把公共请求结构序列化为请求 Body。
 
 所有带 `context.Context` 的公开服务入口都接受 `nil`，并将其视为 `context.Background()`。需要主动取消或设置超时时，调用方仍应传入自己的 Context。
 

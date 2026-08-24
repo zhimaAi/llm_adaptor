@@ -39,12 +39,12 @@ func TestCommonRequestExtraBodyRules(t *testing.T) {
 	n := 2
 	generate := &image.GenerateRequest{Model: "model", Prompt: "draw", N: &n, ExtraBody: map[string]any{"watermark": true}}
 	before := map[string]any{"watermark": true}
-	body, err = buildOpenAIImageGenerateRequest(generate, false)
+	body, err = buildOpenAIImageGenerateRequest(ProviderOpenAI, generate, false)
 	if err != nil || body["watermark"] != true || !reflect.DeepEqual(generate.ExtraBody, before) {
 		t.Fatalf("image ExtraBody injection or immutability failed: body=%#v request=%#v err=%v", body, generate, err)
 	}
 	generate.ExtraBody = map[string]any{"stream": true}
-	body, err = buildOpenAIImageGenerateRequest(generate, false)
+	body, err = buildOpenAIImageGenerateRequest(ProviderOpenAI, generate, false)
 	if err != nil || body["stream"] != true {
 		t.Fatalf("image stream override failed: body=%#v err=%v", body, err)
 	}
@@ -52,7 +52,7 @@ func TestCommonRequestExtraBodyRules(t *testing.T) {
 		Model: "model", Prompt: "edit", Images: []image.Input{{ImageURL: "https://example.com/input.png"}},
 		ExtraBody: map[string]any{"prompt": "caller prompt", "stream": true},
 	}
-	body, err = buildOpenAIImageEditRequest(edit, false)
+	body, err = buildOpenAIImageEditRequest(ProviderOpenAI, edit, false)
 	if err != nil || body["prompt"] != "caller prompt" || body["stream"] != true {
 		t.Fatalf("image edit override failed: body=%#v err=%v", body, err)
 	}

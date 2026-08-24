@@ -27,6 +27,7 @@ const (
 type openAICompatibleProvider struct {
 	config              ClientConfig
 	providerInfo        ProviderInfo
+	authorizationHeader string
 	authorizationPrefix *string
 	chatPath            string
 	embeddingPath       string
@@ -115,7 +116,10 @@ type openAIImageEditWireRequest struct {
 
 func newOpenAICompatibleProvider(config ClientConfig, info ProviderInfo) *openAICompatibleProvider {
 	prefix := bearerPrefix
-	return &openAICompatibleProvider{config: config, providerInfo: info, authorizationPrefix: &prefix}
+	return &openAICompatibleProvider{
+		config: config, providerInfo: info, authorizationHeader: headerAuthorization,
+		authorizationPrefix: &prefix,
+	}
 }
 
 func (p *openAICompatibleProvider) info() ProviderInfo { return p.providerInfo }
@@ -180,7 +184,12 @@ func (p *openAICompatibleProvider) createEmbedding(ctx context.Context, selected
 		Model: request.Model, Input: input, EncodingFormat: request.EncodingFormat,
 		Dimensions: request.Dimensions, User: request.User,
 	}
-	body, err := mergeExtraBody(wire, request.ExtraBody)
+	body, err := mergeExtraBody(wire, nil)
+	if err != nil {
+		return nil, err
+	}
+	filterRequestFields(body, embeddingProviderParameterFields[p.providerInfo.ID], allOpenAIEmbeddingFields)
+	body, err = mergeExtraBody(body, request.ExtraBody)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +248,7 @@ func (p *openAICompatibleProvider) generateImage(ctx context.Context, selected c
 	if request == nil || strings.TrimSpace(request.Prompt) == "" {
 		return nil, fmt.Errorf("%w: image prompt is required", ErrInvalidRequest)
 	}
-	body, err := buildOpenAIImageGenerateRequest(request, false)
+	body, err := buildOpenAIImageGenerateRequest(p.providerInfo.ID, request, false)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +276,7 @@ func (p *openAICompatibleProvider) streamImage(ctx context.Context, selected cre
 	if request == nil || strings.TrimSpace(request.Prompt) == "" {
 		return nil, fmt.Errorf("%w: image prompt is required", ErrInvalidRequest)
 	}
-	body, err := buildOpenAIImageGenerateRequest(&request.GenerateRequest, true)
+	body, err := buildOpenAIImageGenerateRequest(p.providerInfo.ID, &request.GenerateRequest, true)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +295,7 @@ func (p *openAICompatibleProvider) streamImage(ctx context.Context, selected cre
 	}), nil
 }
 
-func buildOpenAIImageGenerateRequest(request *image.GenerateRequest, stream bool) (map[string]any, error) {
+func buildOpenAIImageGenerateRequest(provider Provider, request *image.GenerateRequest, stream bool) (map[string]any, error) {
 	wire := openAIImageGenerateWireRequest{
 		Model: request.Model, Prompt: request.Prompt, N: request.N, Quality: request.Quality,
 		ResponseFormat: request.ResponseFormat, Size: request.Size, User: request.User, OutputFormat: request.OutputFormat,
@@ -296,10 +305,11 @@ func buildOpenAIImageGenerateRequest(request *image.GenerateRequest, stream bool
 		return nil, err
 	}
 	body["stream"] = stream
+	filterRequestFields(body, imageProviderParameterFields[provider], allOpenAIImageFields)
 	return mergeExtraBody(body, request.ExtraBody)
 }
 
-func buildOpenAIImageEditRequest(request *image.EditRequest, stream bool) (map[string]any, error) {
+func buildOpenAIImageEditRequest(provider Provider, request *image.EditRequest, stream bool) (map[string]any, error) {
 	images, err := openAIImageInputs(request.Images)
 	if err != nil {
 		return nil, err
@@ -322,6 +332,7 @@ func buildOpenAIImageEditRequest(request *image.EditRequest, stream bool) (map[s
 		return nil, err
 	}
 	body["stream"] = stream
+	filterRequestFields(body, imageProviderParameterFields[provider], allOpenAIImageFields)
 	return mergeExtraBody(body, request.ExtraBody)
 }
 
@@ -350,7 +361,7 @@ func (p *openAICompatibleProvider) editImage(ctx context.Context, selected crede
 	if request == nil || strings.TrimSpace(request.Prompt) == "" || len(request.Images) == 0 {
 		return nil, fmt.Errorf("%w: image edit prompt and images are required", ErrInvalidRequest)
 	}
-	body, err := buildOpenAIImageEditRequest(request, false)
+	body, err := buildOpenAIImageEditRequest(p.providerInfo.ID, request, false)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +389,7 @@ func (p *openAICompatibleProvider) streamImageEdit(ctx context.Context, selected
 	if request == nil || strings.TrimSpace(request.Prompt) == "" || len(request.Images) == 0 {
 		return nil, fmt.Errorf("%w: image edit prompt and images are required", ErrInvalidRequest)
 	}
-	body, err := buildOpenAIImageEditRequest(&request.EditRequest, true)
+	body, err := buildOpenAIImageEditRequest(p.providerInfo.ID, &request.EditRequest, true)
 	if err != nil {
 		return nil, err
 	}
@@ -515,13 +526,12 @@ func (p *openAICompatibleProvider) doStream(ctx context.Context, selected creden
 	if !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") {
 		endpoint = joinURLPath(p.config.BaseURL, path)
 	}
-	authorization := ""
-	if p.authorizationPrefix != nil && selected.apiKey != "" {
-		authorization = *p.authorizationPrefix + selected.apiKey
-	}
-	request, err := newJSONRequest(ctx, p.config, authorization, endpoint, body)
+	request, err := newJSONRequest(ctx, p.config, "", endpoint, body)
 	if err != nil {
 		return nil, err
+	}
+	if p.authorizationPrefix != nil && selected.apiKey != "" {
+		request.Header.Set(p.authorizationHeader, *p.authorizationPrefix+selected.apiKey)
 	}
 	response, err := p.config.HTTPClient.Do(request)
 	if err != nil {

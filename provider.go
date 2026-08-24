@@ -25,7 +25,6 @@ const (
 	ProviderMoonshot       Provider = "moonshot"
 	ProviderOllama         Provider = "ollama"
 	ProviderOpenAI         Provider = "openai"
-	ProviderOpenAIAgent    Provider = "openaiAgent"
 	ProviderOpenCompatible Provider = "openai-compatible"
 	ProviderOpenRouter     Provider = "openrouter"
 	ProviderSiliconFlow    Provider = "siliconflow"

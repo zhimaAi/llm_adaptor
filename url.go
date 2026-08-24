@@ -28,6 +28,18 @@ func appendURLSegment(baseURL, segment string) string {
 	return joinURLPath(baseURL, segment)
 }
 
+func appendAzureOpenAIV1Path(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	lower := strings.ToLower(baseURL)
+	if strings.HasSuffix(lower, "/openai/v1") {
+		return baseURL
+	}
+	if strings.HasSuffix(lower, "/openai") {
+		return joinURLPath(baseURL, "v1")
+	}
+	return joinURLPath(baseURL, "openai/v1")
+}
+
 func lastURLPathSegment(value string) string {
 	value = strings.TrimRight(strings.TrimSpace(value), "/")
 	if index := strings.LastIndexByte(value, '/'); index >= 0 {

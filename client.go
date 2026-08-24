@@ -97,11 +97,13 @@ func NewClient(config ClientConfig) (*Client, error) {
 		config.ServiceBaseURL = definition.defaultServiceBaseURL
 	}
 	switch config.Provider {
-	case ProviderOpenAIAgent, ProviderXinference:
+	case ProviderXinference:
 		if strings.TrimSpace(config.APIVersion) == "" {
 			return nil, fmt.Errorf("%w: api_version is required for provider %s", ErrInvalidRequest, config.Provider)
 		}
 		config.BaseURL = appendURLSegment(config.BaseURL, config.APIVersion)
+	case ProviderAzure:
+		config.BaseURL = appendAzureOpenAIV1Path(config.BaseURL)
 	case ProviderOllama:
 		config.BaseURL = appendURLSegment(config.BaseURL, "v1")
 	}
@@ -453,7 +455,6 @@ var providerDefinitions = map[Provider]providerDefinition{
 	ProviderMoonshot:       newGenericProviderDefinition("https://api.moonshot.cn/v1", ProviderMoonshot, false, CapabilityChat),
 	ProviderOllama:         newGenericProviderDefinition("http://localhost:11434/v1", ProviderOllama, true, CapabilityChat, CapabilityEmbedding),
 	ProviderOpenAI:         newGenericProviderDefinition("https://api.openai.com/v1", ProviderOpenAI, false, CapabilityChat, CapabilityEmbedding, CapabilityImage),
-	ProviderOpenAIAgent:    newGenericProviderDefinition("", ProviderOpenAIAgent, false, CapabilityChat, CapabilityEmbedding),
 	ProviderOpenCompatible: newGenericProviderDefinition("", ProviderOpenCompatible, true, CapabilityChat, CapabilityEmbedding, CapabilityImage),
 	ProviderOpenRouter: {
 		defaultBaseURL: "https://openrouter.ai/api/v1",
@@ -463,9 +464,7 @@ var providerDefinitions = map[Provider]providerDefinition{
 	ProviderSpark:       newGenericProviderDefinition("https://spark-api-open.xf-yun.com/v1", ProviderSpark, false, CapabilityChat),
 	ProviderXinference:  newRerankProviderDefinition("", ProviderXinference, true, "/rerank", "documents", "top_n", CapabilityChat, CapabilityEmbedding, CapabilityRerank),
 	ProviderZhipu:       newGenericProviderDefinition("https://open.bigmodel.cn/api/paas/v4", ProviderZhipu, false, CapabilityChat, CapabilityEmbedding),
-	ProviderAzure: {
-		newProvider: func(config ClientConfig) providerImplementation { return &azureProvider{config: config} },
-	},
+	ProviderAzure:       newAzureProviderDefinition(),
 	ProviderClaude: {
 		defaultBaseURL: "https://api.anthropic.com/v1",
 		newProvider:    func(config ClientConfig) providerImplementation { return &claudeProvider{config: config} },
@@ -537,6 +536,20 @@ func newBAAIProviderDefinition() providerDefinition {
 		provider.rerankPath = "/v1/rerank"
 		provider.rerankDocumentsKey = "passages"
 		provider.rerankTopKey = "top_k"
+		return provider
+	}
+	return definition
+}
+
+func newAzureProviderDefinition() providerDefinition {
+	definition := newGenericProviderDefinition("", ProviderAzure, false, CapabilityChat, CapabilityEmbedding)
+	definition.newProvider = func(config ClientConfig) providerImplementation {
+		provider := newOpenAICompatibleProvider(config, ProviderInfo{
+			ID: ProviderAzure, Capabilities: []Capability{CapabilityChat, CapabilityEmbedding},
+		})
+		rawPrefix := ""
+		provider.authorizationHeader = azureAPIKeyHeader
+		provider.authorizationPrefix = &rawPrefix
 		return provider
 	}
 	return definition

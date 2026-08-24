@@ -184,6 +184,7 @@ func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stre
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
+	filterRequestFields(body, chatProviderParameterFields[provider], allOpenAIChatFields)
 	applyProviderReasoning(provider, request.Model, request.ReasoningEffort, body)
 	if err := mergeChatExtraBody(body, request.ExtraBody); err != nil {
 		return nil, err
@@ -268,7 +269,7 @@ func buildOpenAIMessageContent(provider Provider, content chat.MessageContent) (
 
 func providerSupportsInputAudio(provider Provider) bool {
 	switch provider {
-	case ProviderOpenAI, ProviderOpenAIAgent, ProviderAzure, ProviderOpenCompatible,
+	case ProviderOpenAI, ProviderAzure, ProviderOpenCompatible,
 		ProviderAli, ProviderDoubao, ProviderGemini, ProviderSiliconFlow:
 		return true
 	default:
@@ -334,7 +335,7 @@ func applyProviderReasoning(provider Provider, model string, effort chat.Reasoni
 		enabledType = chatThinkingEnabled
 	}
 	switch provider {
-	case ProviderOpenAI, ProviderOpenAIAgent, ProviderAzure:
+	case ProviderOpenAI, ProviderAzure:
 		moveMaxTokensToCompletionTokens(body)
 		delete(body, "temperature")
 	case ProviderGemini:

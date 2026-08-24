@@ -63,6 +63,7 @@ func decodeStreamAPIError(provider Provider, credentialHint string, raw []byte) 
 
 const (
 	headerAuthorization = "Authorization"
+	azureAPIKeyHeader   = "api-key"
 	headerContentType   = "Content-Type"
 	mediaTypeJSON       = "application/json"
 	bearerPrefix        = "Bearer "
