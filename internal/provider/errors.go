@@ -8,10 +8,7 @@ import (
 )
 
 var (
-	ErrInvalidAPIKeyConfig = errors.New("invalid api key configuration")
-	ErrCredentialSelection = errors.New("credential selection failed")
-	ErrInvalidRequest      = errors.New("invalid request")
-	ErrUnsupportedProvider = errors.New("unsupported provider")
+	ErrInvalidRequest = errors.New("invalid request")
 )
 
 type UnsupportedCapabilityError struct {
