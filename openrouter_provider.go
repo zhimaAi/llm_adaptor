@@ -15,10 +15,6 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/image"
 )
 
-var openRouterImageReservedRequestKeys = map[string]struct{}{
-	"modalities": {}, "image_config": {},
-}
-
 type openRouterProvider struct{ *openAICompatibleProvider }
 
 type openRouterGeneratedImage struct {
@@ -186,7 +182,7 @@ func buildOpenRouterImageBody(model, prompt string, images []string, n *int, qua
 	if size != "" {
 		body["image_config"] = map[string]any{"image_size": size}
 	}
-	return mergeExtraBody(body, extraBody, imageGenerateReservedRequestKeys, imageEditReservedRequestKeys, openRouterImageReservedRequestKeys)
+	return mergeExtraBody(body, extraBody)
 }
 
 func openRouterInputImages(inputs []image.Input) ([]string, error) {

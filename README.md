@@ -63,6 +63,27 @@ resp, err := client.Chat.Create(ctx, &chat.CreateRequest{
 
 公共常用请求字段包括模型、消息、采样参数、token 上限、停止词、工具、结构化输出、`ReasoningEffort` 和 `StreamOptions`。流式调用使用 `client.Chat.Stream`，返回的 chunk 可交给 `chat.Accumulator` 聚合。`StreamOptions` 未配置时默认请求 usage，只有显式设置 `IncludeUsage=false` 才关闭。
 
+`ReasoningEffort` 采用 OpenAI 的 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。类型是可扩展字符串：适配器不会拒绝未来新增的非空值。OpenAI-compatible、Gemini、OpenRouter 和 Claude 会尽可能透传等级；只有思考开关的供应商将 `none` 视为关闭、其他非空值视为开启；等级不完整的模型向下使用最高可用等级，但非 `none` 不会降成关闭。MiniMax 保留原协议转换：所有模型使用 `reasoning_split`，M3 额外转换为 `thinking.type=adaptive/disabled`。
+
+只有发生档位变化或等级折叠的传参如下；未列出的组合保持原等级：
+
+| 模型或协议能力 | 调用方值 | 最终传参 |
+|---|---|---|
+| Gemini 3.1 Pro | `none`、`minimal` | `reasoning_effort=low` |
+| Gemini 3.1 Pro | `xhigh`、`max` | `reasoning_effort=high` |
+| Gemini 3、Gemini 2.5 Pro | `none` | `reasoning_effort=minimal` |
+| Gemini 2.5/3 | `xhigh`、`max` | `reasoning_effort=high` |
+| Claude effort 模型 | `minimal` | `output_config.effort=low` |
+| Claude 最高只支持 high | `xhigh`、`max` | `output_config.effort=high` |
+| Claude 支持 max、但不支持 xhigh | `xhigh` | `output_config.effort=high` |
+| 不可关闭 Claude | `none` | adaptive thinking，`output_config.effort=low` |
+| 旧版 Claude | 任意非 `none` | enabled thinking，`budget_tokens=1024` |
+| 阿里、SiliconFlow、Xinference、混元、Ollama、百度及 thinking.type 型供应商 | 任意非 `none` | 对应思考开关或 enabled 模式 |
+| MiniMax M3 | `none` / 其他非空值 | disabled / adaptive，并设置 `reasoning_split` |
+| 非 M3 MiniMax | `none` / 其他非空值 | 仅设置 `reasoning_split=false/true` |
+
+未知非空值按向前兼容规则处理：OpenAI-compatible 和 Gemini 原样发送 `reasoning_effort`，OpenRouter 原样发送 `reasoning.effort`，Claude 原样发送 `output_config.effort`，开关型供应商和 MiniMax 视为开启。`ExtraBody` 仍可最终覆盖这些结果。
+
 响应完整保留 OpenAI Chat Completions 的 ID、对象类型、模型、choices、工具调用、音频、引用、logprobs、usage、service tier 和 system fingerprint。`ReasoningContent` 是标准化兼容字段：供应商有原生 reasoning 时优先使用，否则从完整或跨 chunk 的 `<think>...</think>` 中抽取。
 
 ## Embedding
@@ -122,10 +143,14 @@ resp, err := client.Rerank.Create(ctx, &rerank.CreateRequest{
 
 五类 JSON 请求均保留 `ExtraBody map[string]any`，用于尚未纳入公共常用字段的高级参数。适配器先构造供应商内部请求，再注入 ExtraBody：
 
-- 与公共字段、鉴权字段、`stream` 或适配器生成的 thinking 字段冲突时返回 `ErrInvalidRequest`。
-- ExtraBody 不能覆盖 `enable_thinking`、`think`、`thinking`、`reasoning` 或 `reasoning_split`。
+- ExtraBody 是请求 Body 的最终、最高优先级浅层覆盖；同名字段直接使用 ExtraBody 的值。
+- 可覆盖公共字段、`stream` 以及适配器生成的 `enable_thinking`、`think`、`thinking`、`reasoning`、`reasoning_split`。
+- 覆盖仅作用于 JSON Body，不影响 URL、Header 或鉴权；嵌套对象不会递归合并。
+- 显式的 `nil` 会写入 JSON `null`。
 - 请求、slice、map 和 ExtraBody 均不会被适配器修改。
-- 非冲突字段原样发送；供应商不接受时返回供应商 API 错误。
+- 供应商不接受扩展字段时返回供应商 API 错误。
+
+原生协议可能约定不同的扩展层级：阿里图片的 ExtraBody 注入最终 `parameters`，可覆盖适配器从 `N` 等公共字段推导出的参数；其他当前请求默认覆盖最终 Body 顶层。
 
 ## MiniMax Speech
 

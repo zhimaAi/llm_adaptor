@@ -43,7 +43,7 @@ func (p *geminiProvider) createEmbedding(ctx context.Context, selected credentia
 		if request.Dimensions != nil {
 			wire["outputDimensionality"] = *request.Dimensions
 		}
-		body, err := mergeExtraBody(wire, request.ExtraBody, embeddingReservedRequestKeys)
+		body, err := mergeExtraBody(wire, request.ExtraBody)
 		if err != nil {
 			return nil, err
 		}

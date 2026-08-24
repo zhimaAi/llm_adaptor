@@ -59,7 +59,7 @@ func (p *aliProvider) createRerank(ctx context.Context, selected credential, req
 		body["input"] = map[string]any{"query": request.Query, "documents": append([]string(nil), request.Documents...)}
 		body["parameters"] = parameters
 	}
-	body, err := mergeExtraBody(body, request.ExtraBody, rerankReservedRequestKeys)
+	body, err := mergeExtraBody(body, request.ExtraBody)
 	if err != nil {
 		return nil, err
 	}
@@ -154,9 +154,7 @@ func (p *aliProvider) createAliImage(ctx context.Context, selected credential, m
 		"input":      map[string]any{"messages": []any{map[string]any{"role": "user", "content": content}}},
 		"parameters": parameters,
 	}
-	parameters, err := mergeExtraBody(parameters, extraBody, imageGenerateReservedRequestKeys, imageEditReservedRequestKeys, map[string]struct{}{
-		"max_images": {}, "sequential_image_generation": {},
-	})
+	parameters, err := mergeExtraBody(parameters, extraBody)
 	if err != nil {
 		return nil, err
 	}

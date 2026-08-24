@@ -3,7 +3,6 @@
 package llm
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 
@@ -21,12 +20,20 @@ func TestCommonRequestExtraBodyRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := mergeExtraBody(openAIEmbeddingWireRequest{Model: embeddingRequest.Model, Input: input}, embeddingRequest.ExtraBody, embeddingReservedRequestKeys)
+	body, err := mergeExtraBody(openAIEmbeddingWireRequest{Model: embeddingRequest.Model, Input: input}, embeddingRequest.ExtraBody)
 	if err != nil || body["custom"] != "value" {
 		t.Fatalf("embedding ExtraBody was not injected: body=%#v err=%v", body, err)
 	}
-	if _, err := mergeExtraBody(openAIEmbeddingWireRequest{Model: "model", Input: "x"}, map[string]any{"model": "override"}, embeddingReservedRequestKeys); !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("embedding conflict error = %v", err)
+	body, err = mergeExtraBody(openAIEmbeddingWireRequest{Model: "model", Input: "x"}, map[string]any{"model": "override"})
+	if err != nil || body["model"] != "override" {
+		t.Fatalf("embedding override failed: body=%#v err=%v", body, err)
+	}
+	body, err = mergeExtraBody(openAIEmbeddingWireRequest{Model: "model", Input: "x"}, map[string]any{"model": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, exists := body["model"]; !exists || value != nil {
+		t.Fatalf("explicit nil was not preserved as a JSON null candidate: %#v", body)
 	}
 
 	n := 2
@@ -37,8 +44,17 @@ func TestCommonRequestExtraBodyRules(t *testing.T) {
 		t.Fatalf("image ExtraBody injection or immutability failed: body=%#v request=%#v err=%v", body, generate, err)
 	}
 	generate.ExtraBody = map[string]any{"stream": true}
-	if _, err := buildOpenAIImageGenerateRequest(generate, false); !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("image stream conflict error = %v", err)
+	body, err = buildOpenAIImageGenerateRequest(generate, false)
+	if err != nil || body["stream"] != true {
+		t.Fatalf("image stream override failed: body=%#v err=%v", body, err)
+	}
+	edit := &image.EditRequest{
+		Model: "model", Prompt: "edit", Images: []image.Input{{ImageURL: "https://example.com/input.png"}},
+		ExtraBody: map[string]any{"prompt": "caller prompt", "stream": true},
+	}
+	body, err = buildOpenAIImageEditRequest(edit, false)
+	if err != nil || body["prompt"] != "caller prompt" || body["stream"] != true {
+		t.Fatalf("image edit override failed: body=%#v err=%v", body, err)
 	}
 
 	speechRequest := &speech.CreateRequest{Model: "speech-2.8-hd", Text: "hello", ExtraBody: map[string]any{"custom": 1}}
@@ -47,7 +63,8 @@ func TestCommonRequestExtraBodyRules(t *testing.T) {
 		t.Fatalf("speech ExtraBody was not injected: body=%#v err=%v", body, err)
 	}
 	speechRequest.ExtraBody = map[string]any{"stream": true}
-	if _, err := buildMiniMaxSpeechRequest(speechRequest, false, nil); !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("speech stream conflict error = %v", err)
+	body, err = buildMiniMaxSpeechRequest(speechRequest, false, nil)
+	if err != nil || body["stream"] != true {
+		t.Fatalf("speech stream override failed: body=%#v err=%v", body, err)
 	}
 }

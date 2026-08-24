@@ -38,24 +38,6 @@ type openAICompatibleProvider struct {
 	rerankTopKey        string
 }
 
-var embeddingReservedRequestKeys = map[string]struct{}{
-	"model": {}, "input": {}, "encoding_format": {}, "dimensions": {}, "user": {},
-}
-
-var imageGenerateReservedRequestKeys = map[string]struct{}{
-	"model": {}, "prompt": {}, "n": {}, "quality": {}, "response_format": {}, "size": {},
-	"user": {}, "output_format": {}, "stream": {},
-}
-
-var imageEditReservedRequestKeys = map[string]struct{}{
-	"model": {}, "images": {}, "mask": {}, "prompt": {}, "n": {}, "quality": {},
-	"response_format": {}, "size": {}, "user": {}, "output_format": {}, "stream": {},
-}
-
-var rerankReservedRequestKeys = map[string]struct{}{
-	"model": {}, "query": {}, "documents": {}, "passages": {}, "top_n": {}, "top_k": {},
-}
-
 type rerankWireResult struct {
 	Index          int     `json:"index"`
 	RelevanceScore float64 `json:"relevance_score"`
@@ -198,7 +180,7 @@ func (p *openAICompatibleProvider) createEmbedding(ctx context.Context, selected
 		Model: request.Model, Input: input, EncodingFormat: request.EncodingFormat,
 		Dimensions: request.Dimensions, User: request.User,
 	}
-	body, err := mergeExtraBody(wire, request.ExtraBody, embeddingReservedRequestKeys)
+	body, err := mergeExtraBody(wire, request.ExtraBody)
 	if err != nil {
 		return nil, err
 	}
@@ -309,12 +291,12 @@ func buildOpenAIImageGenerateRequest(request *image.GenerateRequest, stream bool
 		Model: request.Model, Prompt: request.Prompt, N: request.N, Quality: request.Quality,
 		ResponseFormat: request.ResponseFormat, Size: request.Size, User: request.User, OutputFormat: request.OutputFormat,
 	}
-	body, err := mergeExtraBody(wire, request.ExtraBody, imageGenerateReservedRequestKeys)
+	body, err := mergeExtraBody(wire, nil)
 	if err != nil {
 		return nil, err
 	}
 	body["stream"] = stream
-	return body, nil
+	return mergeExtraBody(body, request.ExtraBody)
 }
 
 func buildOpenAIImageEditRequest(request *image.EditRequest, stream bool) (map[string]any, error) {
@@ -335,12 +317,12 @@ func buildOpenAIImageEditRequest(request *image.EditRequest, stream bool) (map[s
 		Quality: request.Quality, ResponseFormat: request.ResponseFormat, Size: request.Size, User: request.User,
 		OutputFormat: request.OutputFormat,
 	}
-	body, err := mergeExtraBody(wire, request.ExtraBody, imageEditReservedRequestKeys)
+	body, err := mergeExtraBody(wire, nil)
 	if err != nil {
 		return nil, err
 	}
 	body["stream"] = stream
-	return body, nil
+	return mergeExtraBody(body, request.ExtraBody)
 }
 
 func openAIImageInputs(inputs []image.Input) ([]openAIImageInputWire, error) {
@@ -435,12 +417,6 @@ func (p *openAICompatibleProvider) createRerank(ctx context.Context, selected cr
 		body[topKey] = *request.TopN
 	}
 	for key, value := range request.ExtraBody {
-		if _, reserved := rerankReservedRequestKeys[key]; reserved {
-			return nil, fmt.Errorf("%w: extra_body field %q conflicts with a reserved rerank field", ErrInvalidRequest, key)
-		}
-		if _, exists := body[key]; exists {
-			return nil, fmt.Errorf("%w: extra_body field %q conflicts with a rerank field", ErrInvalidRequest, key)
-		}
 		body[key] = value
 	}
 	rerankEndpoint := p.rerankPath

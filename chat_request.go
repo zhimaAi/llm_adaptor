@@ -20,15 +20,6 @@ const (
 	claudeLegacyMinimumTokens  = 2048
 )
 
-var chatReservedRequestKeys = map[string]struct{}{
-	"model": {}, "messages": {}, "frequency_penalty": {},
-	"max_tokens": {}, "max_completion_tokens": {}, "n": {},
-	"parallel_tool_calls": {}, "presence_penalty": {}, "reasoning_effort": {}, "response_format": {},
-	"seed": {}, "stop": {}, "temperature": {}, "tool_choice": {},
-	"tools": {}, "top_p": {}, "user": {}, "stream": {}, "stream_options": {},
-	"enable_thinking": {}, "think": {}, "thinking": {}, "reasoning": {}, "reasoning_split": {},
-}
-
 var baiduEnableThinkingModelPrefixes = []string{
 	"qwen3-", "ernie-4.5-turbo-vl", "ernie-4.5-vl-28b-a3b", "ernie-5.0-thinking-preview",
 }
@@ -45,6 +36,17 @@ var claudeCannotDisableThinkingModelPrefixes = []string{
 var claudeDefaultSamplingModelPrefixes = []string{
 	"claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
 	"claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
+}
+
+var claudeXHighEffortModelPrefixes = []string{
+	"claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
+	"claude-fable-5", "claude-mythos-5",
+}
+
+var claudeMaxEffortModelPrefixes = []string{
+	"claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4-8",
+	"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5",
+	"claude-mythos-preview",
 }
 
 type openAIChatWireRequest struct {
@@ -130,9 +132,6 @@ type openAIResponseFormatWire struct {
 func buildOpenAIChatRequest(provider Provider, request *chat.CreateRequest, stream bool, streamOptions *chat.StreamOptions) (map[string]any, error) {
 	if request == nil {
 		return nil, fmt.Errorf("%w: chat request is nil", ErrInvalidRequest)
-	}
-	if err := validateReasoningEffort(request.ReasoningEffort); err != nil {
-		return nil, err
 	}
 	messages, err := buildOpenAIMessages(provider, request.Messages)
 	if err != nil {
@@ -274,14 +273,14 @@ func providerSupportsVideoURL(provider Provider) bool {
 	}
 }
 
-func validateReasoningEffort(effort chat.ReasoningEffort) error {
+func isKnownReasoningEffort(effort chat.ReasoningEffort) bool {
 	switch effort {
 	case "", chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow,
 		chat.ReasoningEffortMedium, chat.ReasoningEffortHigh, chat.ReasoningEffortXHigh,
 		chat.ReasoningEffortMax:
-		return nil
+		return true
 	default:
-		return fmt.Errorf("%w: unsupported reasoning_effort %q", ErrInvalidRequest, effort)
+		return false
 	}
 }
 
@@ -308,9 +307,6 @@ func normalizeChatStreamRequest(request *chat.StreamRequest) *chat.StreamRequest
 
 func mergeChatExtraBody(body map[string]any, extra map[string]any) error {
 	for key, value := range extra {
-		if _, reserved := chatReservedRequestKeys[key]; reserved {
-			return fmt.Errorf("%w: extra_body field %q conflicts with a reserved chat field", ErrInvalidRequest, key)
-		}
 		body[key] = value
 	}
 	return nil
@@ -330,9 +326,7 @@ func applyProviderReasoning(provider Provider, model string, effort chat.Reasoni
 		moveMaxTokensToCompletionTokens(body)
 		delete(body, "temperature")
 	case ProviderGemini:
-		if !enabled && hasModelPrefix(model, "gemini-3") {
-			body["reasoning_effort"] = string(chat.ReasoningEffortMinimal)
-		}
+		body["reasoning_effort"] = geminiReasoningEffort(model, effort)
 	case ProviderAli, ProviderSiliconFlow, ProviderXinference, ProviderHunyuan:
 		delete(body, "reasoning_effort")
 		body["enable_thinking"] = enabled
@@ -351,7 +345,7 @@ func applyProviderReasoning(provider Provider, model string, effort chat.Reasoni
 		body["thinking"] = map[string]any{"type": enabledType}
 	case ProviderOpenRouter:
 		delete(body, "reasoning_effort")
-		body["reasoning"] = map[string]any{"enabled": enabled}
+		body["reasoning"] = map[string]any{"effort": string(effort)}
 	case ProviderMiniMax:
 		delete(body, "reasoning_effort")
 		if hasModelPrefix(model, "minimax-m3") {
@@ -360,16 +354,13 @@ func applyProviderReasoning(provider Provider, model string, effort chat.Reasoni
 				thinkingType = chatThinkingAdaptive
 			}
 			body["thinking"] = map[string]any{"type": thinkingType}
-			body["reasoning_split"] = enabled
 		}
+		body["reasoning_split"] = enabled
 		moveMaxTokensToCompletionTokens(body)
 	}
 }
 
 func applyClaudeReasoning(model string, effort chat.ReasoningEffort, body map[string]any) error {
-	if err := validateReasoningEffort(effort); err != nil {
-		return err
-	}
 	if effort == "" {
 		return nil
 	}
@@ -377,6 +368,9 @@ func applyClaudeReasoning(model string, effort chat.ReasoningEffort, body map[st
 	if effort == chat.ReasoningEffortNone {
 		if !cannotDisable {
 			body["thinking"] = map[string]any{"type": chatThinkingDisabled}
+		} else {
+			body["thinking"] = map[string]any{"type": chatThinkingAdaptive, "display": chatThinkingDisplay}
+			body["output_config"] = map[string]any{"effort": string(chat.ReasoningEffortLow)}
 		}
 		if cannotDisable || hasModelPrefix(model, claudeDefaultSamplingModelPrefixes...) {
 			delete(body, "temperature")
@@ -385,14 +379,58 @@ func applyClaudeReasoning(model string, effort chat.ReasoningEffort, body map[st
 	}
 	if hasModelPrefix(model, claudeAdaptiveThinkingModelPrefixes...) {
 		body["thinking"] = map[string]any{"type": chatThinkingAdaptive, "display": chatThinkingDisplay}
+		body["output_config"] = map[string]any{"effort": claudeReasoningEffort(model, effort)}
 	} else {
 		body["thinking"] = map[string]any{"type": chatThinkingEnabled, "budget_tokens": claudeLegacyThinkingBudget}
+		if !isKnownReasoningEffort(effort) {
+			body["output_config"] = map[string]any{"effort": string(effort)}
+		}
 		if maxTokens, ok := numberAsInt(body["max_tokens"]); ok && maxTokens <= claudeLegacyThinkingBudget {
 			body["max_tokens"] = claudeLegacyMinimumTokens
 		}
 	}
 	delete(body, "temperature")
 	return nil
+}
+
+func geminiReasoningEffort(model string, effort chat.ReasoningEffort) string {
+	if !isKnownReasoningEffort(effort) {
+		return string(effort)
+	}
+	if (effort == chat.ReasoningEffortXHigh || effort == chat.ReasoningEffortMax) &&
+		hasModelPrefix(model, "gemini-2.5", "gemini-3") {
+		return string(chat.ReasoningEffortHigh)
+	}
+	if hasModelPrefix(model, "gemini-3.1-pro") && (effort == chat.ReasoningEffortNone || effort == chat.ReasoningEffortMinimal) {
+		return string(chat.ReasoningEffortLow)
+	}
+	if effort == chat.ReasoningEffortNone && hasModelPrefix(model,
+		"gemini-3", "gemini-2.5-pro") {
+		return string(chat.ReasoningEffortMinimal)
+	}
+	return string(effort)
+}
+
+func claudeReasoningEffort(model string, effort chat.ReasoningEffort) string {
+	if !isKnownReasoningEffort(effort) {
+		return string(effort)
+	}
+	switch effort {
+	case chat.ReasoningEffortMinimal:
+		return string(chat.ReasoningEffortLow)
+	case chat.ReasoningEffortXHigh:
+		if !hasModelPrefix(model, claudeXHighEffortModelPrefixes...) {
+			return string(chat.ReasoningEffortHigh)
+		}
+	case chat.ReasoningEffortMax:
+		if !hasModelPrefix(model, claudeMaxEffortModelPrefixes...) {
+			if hasModelPrefix(model, claudeXHighEffortModelPrefixes...) {
+				return string(chat.ReasoningEffortXHigh)
+			}
+			return string(chat.ReasoningEffortHigh)
+		}
+	}
+	return string(effort)
 }
 
 func moveMaxTokensToCompletionTokens(body map[string]any) {

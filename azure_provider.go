@@ -76,7 +76,7 @@ func (p *azureProvider) createEmbedding(ctx context.Context, selected credential
 		Model: request.Model, Input: input, EncodingFormat: request.EncodingFormat,
 		Dimensions: request.Dimensions, User: request.User,
 	}
-	body, err := mergeExtraBody(wire, request.ExtraBody, embeddingReservedRequestKeys)
+	body, err := mergeExtraBody(wire, request.ExtraBody)
 	if err != nil {
 		return nil, err
 	}

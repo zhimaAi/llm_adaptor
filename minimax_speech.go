@@ -25,12 +25,6 @@ type miniMaxProvider struct {
 	*openAICompatibleProvider
 }
 
-var miniMaxSpeechReservedRequestKeys = map[string]struct{}{
-	"model": {}, "text": {}, "language_boost": {}, "voice_setting": {}, "audio_setting": {},
-	"pronunciation_dict": {}, "timbre_weights": {}, "voice_modify": {}, "subtitle_enable": {},
-	"subtitle_type": {}, "output_format": {}, "aigc_watermark": {}, "stream": {}, "stream_options": {},
-}
-
 type miniMaxSpeechWireRequest struct {
 	Model                   string                              `json:"model"`
 	Text                    string                              `json:"text"`
@@ -282,7 +276,7 @@ func buildMiniMaxSpeechRequest(request *speech.CreateRequest, stream bool, strea
 	if streamOptions != nil {
 		wire.StreamOptions = &miniMaxStreamOptionsWire{ExcludeAggregatorAudio: streamOptions.ExcludeAggregatorAudio}
 	}
-	return mergeExtraBody(wire, request.ExtraBody, miniMaxSpeechReservedRequestKeys)
+	return mergeExtraBody(wire, request.ExtraBody)
 }
 
 func miniMaxBusinessError(baseResponse speech.BaseResponse, traceID, credentialHint string, raw []byte) error {

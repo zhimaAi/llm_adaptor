@@ -27,14 +27,6 @@ const (
 	miniMaxMaximumVoiceFileSize = int64(20 * 1024 * 1024)
 )
 
-var miniMaxListVoicesReservedRequestKeys = map[string]struct{}{"voice_type": {}}
-
-var miniMaxCloneVoiceReservedRequestKeys = map[string]struct{}{
-	"file_id": {}, "voice_id": {}, "clone_prompt": {}, "text": {}, "model": {},
-	"language_boost": {}, "text_validation": {}, "accuracy": {}, "need_noise_reduction": {},
-	"need_volume_normalization": {}, "aigc_watermark": {},
-}
-
 type miniMaxListVoicesWireRequest struct {
 	VoiceType string `json:"voice_type"`
 }
@@ -69,7 +61,7 @@ func (p *miniMaxProvider) listVoices(ctx context.Context, selected credential, r
 	if voiceType == "" {
 		voiceType = speech.VoiceTypeAll
 	}
-	body, err := mergeExtraBody(miniMaxListVoicesWireRequest{VoiceType: string(voiceType)}, request.ExtraBody, miniMaxListVoicesReservedRequestKeys)
+	body, err := mergeExtraBody(miniMaxListVoicesWireRequest{VoiceType: string(voiceType)}, request.ExtraBody)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +167,7 @@ func (p *miniMaxProvider) cloneVoice(ctx context.Context, selected credential, r
 			PromptAudio: request.ClonePrompt.PromptAudio, PromptText: request.ClonePrompt.PromptText,
 		}
 	}
-	body, err := mergeExtraBody(wire, request.ExtraBody, miniMaxCloneVoiceReservedRequestKeys)
+	body, err := mergeExtraBody(wire, request.ExtraBody)
 	if err != nil {
 		return nil, err
 	}

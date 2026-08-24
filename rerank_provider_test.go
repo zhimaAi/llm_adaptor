@@ -106,8 +106,11 @@ func TestRerankExtraBodyConflictAndInjection(t *testing.T) {
 	if body["priority"] != float64(1) || request.ExtraBody["priority"] != 1 {
 		t.Fatalf("ExtraBody injection or immutability failed: body=%#v request=%#v", body, request)
 	}
-	request.ExtraBody = map[string]any{"top_n": 1}
-	if _, err := client.Rerank.Create(context.Background(), request); err == nil {
-		t.Fatal("expected rerank conflict error")
+	request.ExtraBody = map[string]any{"top_n": 2}
+	if _, err := client.Rerank.Create(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if body["top_n"] != float64(2) {
+		t.Fatalf("ExtraBody top_n did not override provider value: %#v", body)
 	}
 }

@@ -3,27 +3,47 @@
 package llm
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/zhimaAi/llm_adaptor/v2/chat"
 )
 
-func TestReasoningEffortValidation(t *testing.T) {
+func TestReasoningEffortKnownValuesAndForwardCompatibility(t *testing.T) {
 	valid := []chat.ReasoningEffort{
 		"", chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow,
 		chat.ReasoningEffortMedium, chat.ReasoningEffortHigh, chat.ReasoningEffortXHigh,
 		chat.ReasoningEffortMax,
 	}
 	for _, effort := range valid {
-		if err := validateReasoningEffort(effort); err != nil {
-			t.Fatalf("expected %q to be valid: %v", effort, err)
+		if !isKnownReasoningEffort(effort) {
+			t.Fatalf("expected %q to be known", effort)
 		}
 	}
-	if err := validateReasoningEffort("typo"); !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("expected ErrInvalidRequest, got %v", err)
+	if isKnownReasoningEffort("future") {
+		t.Fatal("future effort must remain unknown so it can be forwarded")
 	}
+	request := &chat.CreateRequest{
+		Model: "future-model", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
+		ReasoningEffort: "future",
+	}
+	body, err := buildOpenAIChatRequest(ProviderOpenCompatible, request, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBodyValue(t, body, "reasoning_effort", "future")
+	body, err = buildOpenAIChatRequest(ProviderAli, request, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBodyValue(t, body, "enable_thinking", true)
+	assertBodyMissing(t, body, "reasoning_effort")
+	body, err = buildOpenAIChatRequest(ProviderOpenRouter, request, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBodyValue(t, body, "reasoning", map[string]any{"effort": "future"})
+	assertBodyMissing(t, body, "reasoning_effort")
 }
 
 func TestProviderReasoningRequestMapping(t *testing.T) {
@@ -62,13 +82,27 @@ func TestProviderReasoningRequestMapping(t *testing.T) {
 			assertBodyValue(t, body, "thinking", map[string]any{"type": "enabled"})
 		}},
 		{name: "openrouter disabled", provider: ProviderOpenRouter, model: "model", effort: chat.ReasoningEffortNone, assert: func(t *testing.T, body map[string]any) {
-			assertBodyValue(t, body, "reasoning", map[string]any{"enabled": false})
+			assertBodyValue(t, body, "reasoning", map[string]any{"effort": "none"})
 		}},
 		{name: "minimax m3", provider: ProviderMiniMax, model: "MiniMax-M3", effort: chat.ReasoningEffortMedium, assert: func(t *testing.T, body map[string]any) {
 			assertBodyValue(t, body, "thinking", map[string]any{"type": "adaptive"})
 			assertBodyValue(t, body, "reasoning_split", true)
 			assertBodyValue(t, body, "max_completion_tokens", float64(1024))
 			assertBodyMissing(t, body, "max_tokens", "reasoning_effort")
+		}},
+		{name: "minimax non m3", provider: ProviderMiniMax, model: "MiniMax-Text-01", effort: chat.ReasoningEffortMedium, assert: func(t *testing.T, body map[string]any) {
+			assertBodyValue(t, body, "reasoning_split", true)
+			assertBodyValue(t, body, "max_completion_tokens", float64(1024))
+			assertBodyMissing(t, body, "thinking", "max_tokens", "reasoning_effort")
+		}},
+		{name: "minimax non m3 disabled", provider: ProviderMiniMax, model: "MiniMax-Text-01", effort: chat.ReasoningEffortNone, assert: func(t *testing.T, body map[string]any) {
+			assertBodyValue(t, body, "reasoning_split", false)
+			assertBodyMissing(t, body, "thinking", "reasoning_effort")
+		}},
+		{name: "minimax future effort", provider: ProviderMiniMax, model: "MiniMax-M3", effort: "future", assert: func(t *testing.T, body map[string]any) {
+			assertBodyValue(t, body, "thinking", map[string]any{"type": "adaptive"})
+			assertBodyValue(t, body, "reasoning_split", true)
+			assertBodyMissing(t, body, "reasoning_effort")
 		}},
 	}
 	for _, test := range tests {
@@ -93,16 +127,19 @@ func TestProviderReasoningRequestMapping(t *testing.T) {
 	}
 }
 
-func TestChatExtraBodyRejectsPublicAndGeneratedFields(t *testing.T) {
+func TestChatExtraBodyOverridesPublicAndGeneratedFields(t *testing.T) {
 	for _, field := range []string{"temperature", "stream", "reasoning_effort", "enable_thinking", "think", "thinking", "reasoning", "reasoning_split"} {
 		t.Run(field, func(t *testing.T) {
+			override := map[string]any{"source": "caller"}
 			request := &chat.CreateRequest{
 				Model: "model", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
-				ReasoningEffort: chat.ReasoningEffortMedium, ExtraBody: map[string]any{field: true},
+				ReasoningEffort: chat.ReasoningEffortMedium, ExtraBody: map[string]any{field: override},
 			}
-			if _, err := buildOpenAIChatRequest(ProviderAli, request, false, nil); !errors.Is(err, ErrInvalidRequest) {
-				t.Fatalf("field %q error = %v, want ErrInvalidRequest", field, err)
+			body, err := buildOpenAIChatRequest(ProviderAli, request, false, nil)
+			if err != nil {
+				t.Fatal(err)
 			}
+			assertBodyValue(t, body, field, override)
 		})
 	}
 }
@@ -166,15 +203,86 @@ func TestBuildClaudeRequestAppliesProviderReasoning(t *testing.T) {
 	}
 }
 
-func TestBuildClaudeRequestRejectsGeneratedThinkingConflict(t *testing.T) {
+func TestBuildClaudeRequestExtraBodyOverridesGeneratedThinking(t *testing.T) {
 	request := &chat.CreateRequest{
 		Model: "claude-3-7-sonnet", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
 		ReasoningEffort: chat.ReasoningEffortMedium,
 		ExtraBody:       map[string]any{"thinking": map[string]any{"type": "caller"}},
 	}
-	if _, err := buildClaudeRequest(request, false); !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	body, err := buildClaudeRequest(request, false)
+	if err != nil {
+		t.Fatal(err)
 	}
+	assertBodyValue(t, body, "thinking", map[string]any{"type": "caller"})
+}
+
+func TestGeminiReasoningEffortDowngrade(t *testing.T) {
+	tests := []struct {
+		model  string
+		effort chat.ReasoningEffort
+		want   string
+	}{
+		{model: "gemini-3.1-pro", effort: chat.ReasoningEffortNone, want: "low"},
+		{model: "gemini-3.1-pro", effort: chat.ReasoningEffortMinimal, want: "low"},
+		{model: "gemini-3.1-pro", effort: chat.ReasoningEffortMax, want: "high"},
+		{model: "gemini-3-flash", effort: chat.ReasoningEffortNone, want: "minimal"},
+		{model: "gemini-2.5-pro", effort: chat.ReasoningEffortXHigh, want: "high"},
+		{model: "gemini-future", effort: "future", want: "future"},
+	}
+	for _, test := range tests {
+		if got := geminiReasoningEffort(test.model, test.effort); got != test.want {
+			t.Errorf("geminiReasoningEffort(%q, %q) = %q, want %q", test.model, test.effort, got, test.want)
+		}
+	}
+}
+
+func TestClaudeReasoningEffortDowngrade(t *testing.T) {
+	tests := []struct {
+		model  string
+		effort chat.ReasoningEffort
+		want   string
+	}{
+		{model: "claude-opus-4-6", effort: chat.ReasoningEffortMinimal, want: "low"},
+		{model: "claude-opus-4-6", effort: chat.ReasoningEffortXHigh, want: "high"},
+		{model: "claude-opus-4-6", effort: chat.ReasoningEffortMax, want: "max"},
+		{model: "claude-opus-4-7", effort: chat.ReasoningEffortXHigh, want: "xhigh"},
+		{model: "claude-future", effort: "future", want: "future"},
+	}
+	for _, test := range tests {
+		if got := claudeReasoningEffort(test.model, test.effort); got != test.want {
+			t.Errorf("claudeReasoningEffort(%q, %q) = %q, want %q", test.model, test.effort, got, test.want)
+		}
+	}
+}
+
+func TestClaudeReasoningRequestUsesEffortCapability(t *testing.T) {
+	request := &chat.CreateRequest{
+		Model: "claude-opus-4-6", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
+		ReasoningEffort: chat.ReasoningEffortXHigh,
+	}
+	body, err := buildClaudeRequest(request, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBodyValue(t, body, "output_config", map[string]any{"effort": "high"})
+	assertBodyValue(t, body, "thinking", map[string]any{"type": "adaptive", "display": "summarized"})
+
+	request.Model = "claude-fable-5"
+	request.ReasoningEffort = chat.ReasoningEffortNone
+	body, err = buildClaudeRequest(request, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBodyValue(t, body, "output_config", map[string]any{"effort": "low"})
+	assertBodyValue(t, body, "thinking", map[string]any{"type": "adaptive", "display": "summarized"})
+
+	request.Model = "claude-opus-4-6"
+	request.ReasoningEffort = "future"
+	body, err = buildClaudeRequest(request, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBodyValue(t, body, "output_config", map[string]any{"effort": "future"})
 }
 
 func assertBodyValue(t *testing.T, body map[string]any, key string, want any) {
