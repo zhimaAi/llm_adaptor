@@ -269,7 +269,7 @@ func buildOpenAIMessageContent(provider Provider, content chat.MessageContent) (
 
 func providerSupportsInputAudio(provider Provider) bool {
 	switch provider {
-	case ProviderOpenAI, ProviderAzure, ProviderOpenCompatible,
+	case ProviderOpenAI, ProviderAzure, ProviderOpenAIAgent,
 		ProviderAli, ProviderDoubao, ProviderGemini, ProviderSiliconFlow:
 		return true
 	default:
@@ -279,7 +279,7 @@ func providerSupportsInputAudio(provider Provider) bool {
 
 func providerSupportsVideoURL(provider Provider) bool {
 	switch provider {
-	case ProviderOpenCompatible, ProviderAli, ProviderDoubao, ProviderGemini, ProviderHunyuan:
+	case ProviderOpenAIAgent, ProviderAli, ProviderDoubao, ProviderGemini, ProviderHunyuan:
 		return true
 	default:
 		return false

@@ -22,7 +22,7 @@ func TestOpenAIStreamReturnsAPIErrorOnce(t *testing.T) {
 		_, _ = io.WriteString(writer, `data: {"error":{"code":"rate_limit","type":"rate_limit_error","message":"slow down"}}`+"\n\n")
 	}))
 	defer server.Close()
-	client, err := NewClient(ClientConfig{Provider: ProviderOpenCompatible, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}})
+	client, err := NewClient(ClientConfig{Provider: ProviderOpenAIAgent, BaseURL: server.URL, APIVersion: "v1", Credentials: CredentialConfig{APIKeys: "key"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestImageEditUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/images/edits":
+		case "/v1/images/edits":
 			var body map[string]any
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Fatal(err)
@@ -64,7 +64,7 @@ func TestImageEditUsesTypedInputAndNormalizesDownloadedBase64(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client, err := NewClient(ClientConfig{Provider: ProviderOpenCompatible, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}})
+	client, err := NewClient(ClientConfig{Provider: ProviderOpenAIAgent, BaseURL: server.URL, APIVersion: "v1", Credentials: CredentialConfig{APIKeys: "key"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestImageResponseRejectsMissingImageData(t *testing.T) {
 		_, _ = io.WriteString(writer, `{"data":[{"error":{"code":"content_policy","message":"blocked"}}]}`)
 	}))
 	defer server.Close()
-	client, err := NewClient(ClientConfig{Provider: ProviderOpenCompatible, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}})
+	client, err := NewClient(ClientConfig{Provider: ProviderOpenAIAgent, BaseURL: server.URL, APIVersion: "v1", Credentials: CredentialConfig{APIKeys: "key"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestImageStreamReturnsPartialFailureOnce(t *testing.T) {
 		_, _ = io.WriteString(writer, `data: {"type":"image_generation.partial_failed","error":{"code":"render_failed","message":"try again"}}`+"\n\n")
 	}))
 	defer server.Close()
-	client, err := NewClient(ClientConfig{Provider: ProviderOpenCompatible, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}})
+	client, err := NewClient(ClientConfig{Provider: ProviderOpenAIAgent, BaseURL: server.URL, APIVersion: "v1", Credentials: CredentialConfig{APIKeys: "key"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,7 +27,7 @@ func TestReasoningEffortKnownValuesAndForwardCompatibility(t *testing.T) {
 		Model: "future-model", Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
 		ReasoningEffort: "future",
 	}
-	body, err := buildOpenAIChatRequest(ProviderOpenCompatible, request, false, nil)
+	body, err := buildOpenAIChatRequest(ProviderOpenAIAgent, request, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

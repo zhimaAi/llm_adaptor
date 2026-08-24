@@ -14,7 +14,7 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/chat"
 )
 
-func TestOpenAICompatibleChatUsesSelectedCredentialAndPreservesFields(t *testing.T) {
+func TestOpenAIAgentChatUsesSelectedCredentialAndPreservesFields(t *testing.T) {
 	var authorizations []string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		authorizations = append(authorizations, request.Header.Get(headerAuthorization))
@@ -29,7 +29,7 @@ func TestOpenAICompatibleChatUsesSelectedCredentialAndPreservesFields(t *testing
 	}))
 	defer server.Close()
 
-	client, err := NewClient(ClientConfig{Provider: ProviderOpenCompatible, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key1,key2"}})
+	client, err := NewClient(ClientConfig{Provider: ProviderOpenAIAgent, BaseURL: server.URL, APIVersion: "v1", Credentials: CredentialConfig{APIKeys: "key1,key2"}})
 	if err != nil {
 		t.Fatal(err)
 	}

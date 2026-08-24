@@ -4,6 +4,28 @@ package llm
 
 import "testing"
 
+func TestOpenAIAgentProviderContract(t *testing.T) {
+	if ProviderOpenAIAgent != Provider("openaiAgent") {
+		t.Fatalf("provider value = %q", ProviderOpenAIAgent)
+	}
+	client, err := NewClient(ClientConfig{
+		Provider:   ProviderOpenAIAgent,
+		BaseURL:    "https://gateway.example/custom",
+		APIVersion: "v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range []Capability{CapabilityChat, CapabilityEmbedding, CapabilityImage} {
+		if !client.supports(capability) {
+			t.Errorf("missing capability %s", capability)
+		}
+	}
+	if client.config.BaseURL != "https://gateway.example/custom/v1" {
+		t.Fatalf("base URL = %q", client.config.BaseURL)
+	}
+}
+
 func TestProviderCapabilityImplementations(t *testing.T) {
 	for id, definition := range providerDefinitions {
 		t.Run(string(id), func(t *testing.T) {

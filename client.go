@@ -97,7 +97,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		config.ServiceBaseURL = definition.defaultServiceBaseURL
 	}
 	switch config.Provider {
-	case ProviderXinference:
+	case ProviderOpenAIAgent, ProviderXinference:
 		if strings.TrimSpace(config.APIVersion) == "" {
 			return nil, fmt.Errorf("%w: api_version is required for provider %s", ErrInvalidRequest, config.Provider)
 		}
@@ -450,12 +450,12 @@ var providerDefinitions = map[Provider]providerDefinition{
 		defaultServiceBaseURL: geminiDefaultServiceBaseURL,
 		newProvider:           func(config ClientConfig) providerImplementation { return newGeminiProvider(config) },
 	},
-	ProviderHunyuan:        newGenericProviderDefinition("https://api.hunyuan.cloud.tencent.com/v1", ProviderHunyuan, false, CapabilityChat, CapabilityEmbedding),
-	ProviderLingYiWanWu:    newGenericProviderDefinition("https://api.lingyiwanwu.com/v1", ProviderLingYiWanWu, false, CapabilityChat),
-	ProviderMoonshot:       newGenericProviderDefinition("https://api.moonshot.cn/v1", ProviderMoonshot, false, CapabilityChat),
-	ProviderOllama:         newGenericProviderDefinition("http://localhost:11434/v1", ProviderOllama, true, CapabilityChat, CapabilityEmbedding),
-	ProviderOpenAI:         newGenericProviderDefinition("https://api.openai.com/v1", ProviderOpenAI, false, CapabilityChat, CapabilityEmbedding, CapabilityImage),
-	ProviderOpenCompatible: newGenericProviderDefinition("", ProviderOpenCompatible, true, CapabilityChat, CapabilityEmbedding, CapabilityImage),
+	ProviderHunyuan:     newGenericProviderDefinition("https://api.hunyuan.cloud.tencent.com/v1", ProviderHunyuan, false, CapabilityChat, CapabilityEmbedding),
+	ProviderLingYiWanWu: newGenericProviderDefinition("https://api.lingyiwanwu.com/v1", ProviderLingYiWanWu, false, CapabilityChat),
+	ProviderMoonshot:    newGenericProviderDefinition("https://api.moonshot.cn/v1", ProviderMoonshot, false, CapabilityChat),
+	ProviderOllama:      newGenericProviderDefinition("http://localhost:11434/v1", ProviderOllama, true, CapabilityChat, CapabilityEmbedding),
+	ProviderOpenAI:      newGenericProviderDefinition("https://api.openai.com/v1", ProviderOpenAI, false, CapabilityChat, CapabilityEmbedding, CapabilityImage),
+	ProviderOpenAIAgent: newGenericProviderDefinition("", ProviderOpenAIAgent, true, CapabilityChat, CapabilityEmbedding, CapabilityImage),
 	ProviderOpenRouter: {
 		defaultBaseURL: "https://openrouter.ai/api/v1",
 		newProvider:    func(config ClientConfig) providerImplementation { return newOpenRouterProvider(config) },

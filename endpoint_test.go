@@ -11,7 +11,8 @@ func TestProviderEndpointNormalization(t *testing.T) {
 		wantBase    string
 		wantService string
 	}{
-		{name: "open compatible preserves complete base", config: ClientConfig{Provider: ProviderOpenCompatible, BaseURL: "https://gateway.example/custom/v3", APIVersion: "ignored", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://gateway.example/custom/v3"},
+		{name: "openai agent appends version", config: ClientConfig{Provider: ProviderOpenAIAgent, BaseURL: "https://gateway.example/custom", APIVersion: "v3", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://gateway.example/custom/v3"},
+		{name: "openai agent keeps existing version", config: ClientConfig{Provider: ProviderOpenAIAgent, BaseURL: "https://gateway.example/custom/v3/", APIVersion: "v3", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://gateway.example/custom/v3"},
 		{name: "xinference keeps existing version", config: ClientConfig{Provider: ProviderXinference, BaseURL: "https://gateway.example/custom/v1/", APIVersion: "v1", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://gateway.example/custom/v1"},
 		{name: "azure appends openai v1", config: ClientConfig{Provider: ProviderAzure, BaseURL: "https://resource.openai.azure.com/custom", APIVersion: "ignored", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://resource.openai.azure.com/custom/openai/v1"},
 		{name: "azure keeps complete openai v1", config: ClientConfig{Provider: ProviderAzure, BaseURL: "https://resource.openai.azure.com/custom/openai/v1/", Credentials: CredentialConfig{APIKeys: "key"}}, wantBase: "https://resource.openai.azure.com/custom/openai/v1"},
@@ -34,7 +35,9 @@ func TestProviderEndpointNormalization(t *testing.T) {
 }
 
 func TestVersionedProvidersRequireAPIVersion(t *testing.T) {
-	if _, err := NewClient(ClientConfig{Provider: ProviderXinference, BaseURL: "https://example.com", Credentials: CredentialConfig{APIKeys: "key"}}); err == nil {
-		t.Fatal("Xinference accepted an empty API version")
+	for _, provider := range []Provider{ProviderOpenAIAgent, ProviderXinference} {
+		if _, err := NewClient(ClientConfig{Provider: provider, BaseURL: "https://example.com", Credentials: CredentialConfig{APIKeys: "key"}}); err == nil {
+			t.Fatalf("provider %s accepted an empty API version", provider)
+		}
 	}
 }
