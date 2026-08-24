@@ -13,10 +13,8 @@ Go 语言多模型服务商适配包。v2 将调用方可见的请求和响应�
 ## 安装
 
 ```bash
-go get github.com/zhimaAi/llm_adaptor/v2@<commit>
+go get github.com/zhimaAi/llm_adaptor/v2
 ```
-
-本模块不再发布 Git tag。调用方使用目标 commit 对应的 Go pseudo-version 更新依赖。
 
 ## 创建客户端
 
@@ -36,7 +34,16 @@ client, err := llm.NewClient(llm.ClientConfig{
 - Azure 接受资源根地址或已经包含 `/openai/v1` 的地址，适配器幂等补齐 `/openai/v1`；请求使用 Body 中的 `model` 作为 Deployment Name，并通过 `api-key` Header 鉴权。`APIVersion` 对 Azure 不生效。
 - `ProviderOpenAIAgent` 和 Xinference 使用 `APIVersion` 幂等补齐版本路径；Ollama 兼容传入服务根地址或已经包含 `/v1` 的地址。
 
-适配器当前注册 25 个 Provider，其中 `ProviderVoyage` 仅提供 Embedding；排除 Voyage 后是 ChatWiki 配置的 24 个服务商。ChatWiki 产品层和适配器层的 OpenAI Agent 都使用 `openaiAgent`。
+适配器当前注册 25 个 Provider，其中 `ProviderVoyage` 仅提供 Embedding。具体能力以 `Client.ProviderInfo()` 返回的 `Capabilities` 为准。
+
+## 项目结构
+
+- 根包只提供 `Client`、配置、错误、APIKey 选择和五类服务门面。
+- `chat`、`embedding`、`image`、`rerank`、`speech` 定义稳定的公共请求与响应。
+- 每个模型服务商在 `internal/providers` 下拥有独立目录，并按能力拆分实现文件。
+- OpenAI-compatible 协议复用位于 `internal/protocol/openai`；HTTP、SSE、URL、Context、ExtraBody 和流状态由内部共享层实现。
+
+新增服务商时应注册新的 Provider Definition，并复用公共协议 Spec；调用应用不需要依赖任何 `internal` 包。
 
 APIKey 支持：
 
@@ -149,7 +156,7 @@ resp, err := client.Rerank.Create(ctx, &rerank.CreateRequest{
 
 公共请求允许调用方始终使用同一套字段。Provider 不支持的公共字段会被静默忽略，不会阻断请求；支持字段的非法值仍返回 `ErrInvalidRequest`。多模态 Part、Tool 或编辑图片中只有部分输入可用时，适配器保留可转换部分；过滤后没有必要输入时返回 `ErrInvalidRequest`，避免发送空消息或空编辑请求。
 
-Chat、Embedding 和 Image 的通用 Builder 都通过 Provider 参数支持矩阵提取字段。OpenAI、Azure v1、OpenAI Agent、302.AI 和 OpenRouter 使用完整的 OpenAI 常用字段；Cohere、MiniMax、星火、Ollama 等兼容协议只发送其明确支持的字段。原生协议 Provider 继续使用自己的内部请求 DTO。所有 Provider 都不会直接把公共请求结构序列化为请求 Body。
+Chat、Embedding 和 Image 的通用 Builder 通过各 Provider 目录提供的 Spec 提取字段。OpenAI、Azure v1、OpenAI Agent、302.AI 和 OpenRouter 使用完整的 OpenAI 常用字段；Cohere、MiniMax、星火、Ollama 等兼容协议只发送其明确支持的字段。原生协议 Provider 继续使用自己的内部请求 DTO。所有 Provider 都不会直接把公共请求结构序列化为请求 Body。
 
 所有带 `context.Context` 的公开服务入口都接受 `nil`，并将其视为 `context.Background()`。需要主动取消或设置超时时，调用方仍应传入自己的 Context。
 
@@ -178,7 +185,7 @@ client, err := llm.NewClient(llm.ClientConfig{
 
 resp, err := client.Speech.Create(ctx, &speech.CreateRequest{
     Model: "speech-2.8-hd",
-    Text:  "欢迎使用 ChatWiki",
+    Text:  "欢迎使用语音合成服务",
     VoiceSetting: &speech.VoiceSetting{
         VoiceID: "male-qn-qingse",
     },
