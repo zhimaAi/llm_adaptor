@@ -51,7 +51,6 @@ func NewClient(config ClientConfig) (*Client, error) {
 	internalConfig := internalprovider.Config{
 		Provider: internalprovider.ID(config.Provider), BaseURL: config.BaseURL,
 		ServiceBaseURL: config.ServiceBaseURL,
-		Credentials:    internalprovider.CredentialConfig{APIKeys: config.Credentials.APIKeys},
 		APIVersion:     config.APIVersion, HTTPClient: config.HTTPClient, DefaultHeaders: config.DefaultHeaders,
 	}
 	if definition.Normalize != nil {

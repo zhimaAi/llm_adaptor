@@ -63,6 +63,47 @@ func TestProviderRegistryContract(t *testing.T) {
 	}
 }
 
+func TestPublicProviderIdentifiersMatchInternalIDs(t *testing.T) {
+	pairs := []struct {
+		public   Provider
+		internal internalprovider.ID
+	}{
+		{Provider302AI, internalprovider.ID302AI},
+		{ProviderAli, internalprovider.IDAli},
+		{ProviderAzure, internalprovider.IDAzure},
+		{ProviderBAAI, internalprovider.IDBAAI},
+		{ProviderBaichuan, internalprovider.IDBaichuan},
+		{ProviderBaidu, internalprovider.IDBaidu},
+		{ProviderClaude, internalprovider.IDClaude},
+		{ProviderCohere, internalprovider.IDCohere},
+		{ProviderDeepSeek, internalprovider.IDDeepSeek},
+		{ProviderDoubao, internalprovider.IDDoubao},
+		{ProviderGemini, internalprovider.IDGemini},
+		{ProviderHunyuan, internalprovider.IDHunyuan},
+		{ProviderJina, internalprovider.IDJina},
+		{ProviderLingYiWanWu, internalprovider.IDLingYiWanWu},
+		{ProviderMiniMax, internalprovider.IDMiniMax},
+		{ProviderMoonshot, internalprovider.IDMoonshot},
+		{ProviderOllama, internalprovider.IDOllama},
+		{ProviderOpenAI, internalprovider.IDOpenAI},
+		{ProviderOpenAIAgent, internalprovider.IDOpenAIAgent},
+		{ProviderOpenRouter, internalprovider.IDOpenRouter},
+		{ProviderSiliconFlow, internalprovider.IDSiliconFlow},
+		{ProviderSpark, internalprovider.IDSpark},
+		{ProviderVoyage, internalprovider.IDVoyage},
+		{ProviderXinference, internalprovider.IDXinference},
+		{ProviderZhipu, internalprovider.IDZhipu},
+	}
+	if len(pairs) != 25 {
+		t.Fatalf("provider identifier count = %d, want 25", len(pairs))
+	}
+	for _, pair := range pairs {
+		if string(pair.public) != string(pair.internal) {
+			t.Errorf("public provider %q does not match internal id %q", pair.public, pair.internal)
+		}
+	}
+}
+
 func TestProviderDirectoryContract(t *testing.T) {
 	want := []string{"ai302", "ali", "azure", "baai", "baichuan", "baidu", "claude", "cohere", "deepseek", "doubao", "gemini", "hunyuan", "jina", "lingyiwanwu", "minimax", "moonshot", "ollama", "openai", "openaiagent", "openrouter", "siliconflow", "spark", "voyage", "xinference", "zhipu"}
 	entries, err := os.ReadDir(filepath.Join("internal", "providers"))

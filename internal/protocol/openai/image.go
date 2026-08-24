@@ -17,8 +17,6 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/transport"
 )
 
-const imagePartialFailed = "image_generation.partial_failed"
-
 type imageInputWire struct {
 	FileID   string `json:"file_id,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`

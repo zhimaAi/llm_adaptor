@@ -19,11 +19,10 @@ import (
 )
 
 const (
-	speechPath                   = "/t2a_v2"
-	miniMaxSpeechStatusStreaming = 1
-	miniMaxSpeechStatusComplete  = 2
-	miniMaxStreamInitialBuffer   = 64 * 1024
-	miniMaxStreamMaximumBuffer   = 16 * 1024 * 1024
+	speechPath                  = "/t2a_v2"
+	miniMaxSpeechStatusComplete = 2
+	miniMaxStreamInitialBuffer  = 64 * 1024
+	miniMaxStreamMaximumBuffer  = 16 * 1024 * 1024
 )
 
 type Provider struct {
