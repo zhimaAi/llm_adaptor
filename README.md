@@ -34,7 +34,7 @@ client, err := llm.NewClient(llm.ClientConfig{
 
 - `ProviderOpenAIAgent` 是 v2 唯一的通用 OpenAI-compatible 入口，字符串值为 `openaiAgent`。`BaseURL` 和 `APIVersion` 必须由调用方传入，适配器会保留自定义子路径并幂等补齐版本路径；APIKey 可以为空。v2 删除了 `ProviderOpenCompatible`，不提供源码兼容别名。
 - Azure 接受资源根地址或已经包含 `/openai/v1` 的地址，适配器幂等补齐 `/openai/v1`；请求使用 Body 中的 `model` 作为 Deployment Name，并通过 `api-key` Header 鉴权。`APIVersion` 对 Azure 不生效。
-- `APIVersion` 目前仅用于 Xinference 等仍需要由适配器补版本路径的 Provider；Ollama 兼容传入服务根地址或已经包含 `/v1` 的地址。
+- `ProviderOpenAIAgent` 和 Xinference 使用 `APIVersion` 幂等补齐版本路径；Ollama 兼容传入服务根地址或已经包含 `/v1` 的地址。
 
 适配器当前注册 25 个 Provider，其中 `ProviderVoyage` 仅提供 Embedding；排除 Voyage 后是 ChatWiki 配置的 24 个服务商。ChatWiki 产品层和适配器层的 OpenAI Agent 都使用 `openaiAgent`。
 
