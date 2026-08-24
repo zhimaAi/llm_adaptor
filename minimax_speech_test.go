@@ -157,7 +157,7 @@ func TestMiniMaxSpeechCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.Speech.Create(context.Background(), &speech.CreateRequest{
+	response, err := client.Speech.Create(nil, &speech.CreateRequest{
 		Model:     "speech-2.8-hd",
 		Text:      "test",
 		ExtraBody: map[string]any{"custom": "value"},
@@ -186,7 +186,7 @@ func TestMiniMaxSpeechStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream, err := client.Speech.Stream(context.Background(), &speech.StreamRequest{
+	stream, err := client.Speech.Stream(nil, &speech.StreamRequest{
 		CreateRequest: speech.CreateRequest{Model: "speech-2.8-turbo", Text: "test"},
 	})
 	if err != nil {
@@ -363,15 +363,15 @@ func TestMiniMaxVoiceManagementUsesSelectedCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	voices, err := client.Speech.ListVoices(context.Background(), &speech.ListVoicesRequest{VoiceType: speech.VoiceTypeAll})
+	voices, err := client.Speech.ListVoices(nil, &speech.ListVoicesRequest{VoiceType: speech.VoiceTypeAll})
 	if err != nil || len(voices.SystemVoices) != 1 {
 		t.Fatalf("unexpected voices: %#v, %v", voices, err)
 	}
-	upload, err := client.Speech.UploadVoiceFile(context.Background(), &speech.UploadVoiceFileRequest{Purpose: miniMaxVoiceClonePurpose, FilePath: tempPath})
+	upload, err := client.Speech.UploadVoiceFile(nil, &speech.UploadVoiceFileRequest{Purpose: miniMaxVoiceClonePurpose, FilePath: tempPath})
 	if err != nil || upload.File.FileID != 123 {
 		t.Fatalf("unexpected upload: %#v, %v", upload, err)
 	}
-	clone, err := client.Speech.CloneVoice(context.Background(), &speech.CloneVoiceRequest{FileID: upload.File.FileID, VoiceID: "test-voice"})
+	clone, err := client.Speech.CloneVoice(nil, &speech.CloneVoiceRequest{FileID: upload.File.FileID, VoiceID: "test-voice"})
 	if err != nil || clone.DemoAudio == "" {
 		t.Fatalf("unexpected clone response: %#v, %v", clone, err)
 	}
@@ -381,7 +381,7 @@ func TestMiniMaxVoiceManagementUsesSelectedCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	atomic, err := client.Speech.CloneVoiceFromFiles(context.Background(), &speech.CloneVoiceFromFilesRequest{
+	atomic, err := client.Speech.CloneVoiceFromFiles(nil, &speech.CloneVoiceFromFilesRequest{
 		SourceFilePath: tempPath,
 		PromptFilePath: tempPath,
 		CloneRequest: speech.CloneVoiceRequest{

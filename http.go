@@ -69,9 +69,7 @@ const (
 )
 
 func newJSONRequest(ctx context.Context, config ClientConfig, authorization, url string, body any) (*http.Request, error) {
-	if ctx == nil {
-		return nil, ErrNilContext
-	}
+	ctx = normalizeContext(ctx)
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err

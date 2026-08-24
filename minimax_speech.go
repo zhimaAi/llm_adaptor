@@ -92,7 +92,7 @@ func (p *miniMaxProvider) info() ProviderInfo {
 }
 
 func (p *miniMaxProvider) createSpeech(ctx context.Context, credential credential, request *speech.CreateRequest) (*speech.CreateResponse, error) {
-	if err := validateSpeechRequest(ctx, request); err != nil {
+	if err := validateSpeechRequest(request); err != nil {
 		return nil, err
 	}
 	body, err := buildMiniMaxSpeechRequest(request, false, nil)
@@ -129,14 +129,14 @@ func (p *miniMaxProvider) streamSpeech(ctx context.Context, credential credentia
 	if request == nil {
 		return nil, fmt.Errorf("%w: speech request is nil", ErrInvalidRequest)
 	}
-	if err := validateSpeechRequest(ctx, &request.CreateRequest); err != nil {
+	if err := validateSpeechRequest(&request.CreateRequest); err != nil {
 		return nil, err
 	}
 	body, err := buildMiniMaxSpeechRequest(&request.CreateRequest, true, request.StreamOptions)
 	if err != nil {
 		return nil, err
 	}
-	streamContext, cancel := context.WithCancel(ctx)
+	streamContext, cancel := context.WithCancel(normalizeContext(ctx))
 	httpRequest, err := newJSONRequest(streamContext, p.config, bearerPrefix+credential.apiKey, p.config.BaseURL+MiniMaxSpeechPath, body)
 	if err != nil {
 		cancel()
@@ -163,10 +163,7 @@ func (p *miniMaxProvider) streamSpeech(ctx context.Context, credential credentia
 	}, nil
 }
 
-func validateSpeechRequest(ctx context.Context, request *speech.CreateRequest) error {
-	if ctx == nil {
-		return ErrNilContext
-	}
+func validateSpeechRequest(request *speech.CreateRequest) error {
 	if request == nil {
 		return fmt.Errorf("%w: speech request is nil", ErrInvalidRequest)
 	}

@@ -159,7 +159,7 @@ func (p *openAICompatibleProvider) streamChat(ctx context.Context, selected cred
 	if path == "" {
 		path = ChatCompletionsPath
 	}
-	streamContext, cancel := context.WithCancel(ctx)
+	streamContext, cancel := context.WithCancel(normalizeContext(ctx))
 	response, err := p.doStream(streamContext, selected, path, body)
 	if err != nil {
 		cancel()
@@ -275,7 +275,7 @@ func (p *openAICompatibleProvider) streamImage(ctx context.Context, selected cre
 	if path == "" {
 		path = ImageGenerationsPath
 	}
-	streamContext, cancel := context.WithCancel(ctx)
+	streamContext, cancel := context.WithCancel(normalizeContext(ctx))
 	response, err := p.doStream(streamContext, selected, path, body)
 	if err != nil {
 		cancel()
@@ -386,7 +386,7 @@ func (p *openAICompatibleProvider) streamImageEdit(ctx context.Context, selected
 	if path == "" {
 		path = ImageEditsPath
 	}
-	streamContext, cancel := context.WithCancel(ctx)
+	streamContext, cancel := context.WithCancel(normalizeContext(ctx))
 	response, err := p.doStream(streamContext, selected, path, body)
 	if err != nil {
 		cancel()

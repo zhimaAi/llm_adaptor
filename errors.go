@@ -11,23 +11,12 @@ var (
 	ErrInvalidAPIKeyConfig = errors.New("invalid api key configuration")
 	ErrCredentialSelection = errors.New("credential selection failed")
 	ErrInvalidRequest      = errors.New("invalid request")
-	ErrNilContext          = errors.New("context is nil")
 	ErrUnsupportedProvider = errors.New("unsupported provider")
 )
 
 type UnsupportedCapabilityError struct {
 	Provider   Provider
 	Capability Capability
-}
-
-type UnsupportedParameterError struct {
-	Provider   Provider
-	Capability Capability
-	Parameter  string
-}
-
-func (e *UnsupportedParameterError) Error() string {
-	return fmt.Sprintf("provider %q does not support parameter %q for capability %q", e.Provider, e.Parameter, e.Capability)
 }
 
 func (e *UnsupportedCapabilityError) Error() string {

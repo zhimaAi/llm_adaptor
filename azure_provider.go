@@ -55,7 +55,7 @@ func (p *azureProvider) streamChat(ctx context.Context, selected credential, req
 		return nil, err
 	}
 	delete(body, "model")
-	streamContext, cancel := context.WithCancel(ctx)
+	streamContext, cancel := context.WithCancel(normalizeContext(ctx))
 	response, err := p.doResponse(streamContext, selected, request.Model, "chat/completions", body)
 	if err != nil {
 		cancel()

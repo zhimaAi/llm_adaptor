@@ -51,9 +51,7 @@ type miniMaxClonePromptWire struct {
 }
 
 func (p *miniMaxProvider) listVoices(ctx context.Context, selected credential, request *speech.ListVoicesRequest) (*speech.ListVoicesResponse, error) {
-	if ctx == nil {
-		return nil, ErrNilContext
-	}
+	ctx = normalizeContext(ctx)
 	if request == nil {
 		return nil, fmt.Errorf("%w: list voices request is nil", ErrInvalidRequest)
 	}
@@ -84,9 +82,7 @@ func (p *miniMaxProvider) listVoices(ctx context.Context, selected credential, r
 }
 
 func (p *miniMaxProvider) uploadVoiceFile(ctx context.Context, selected credential, request *speech.UploadVoiceFileRequest) (*speech.UploadVoiceFileResponse, error) {
-	if ctx == nil {
-		return nil, ErrNilContext
-	}
+	ctx = normalizeContext(ctx)
 	if request == nil {
 		return nil, fmt.Errorf("%w: upload voice file request is nil", ErrInvalidRequest)
 	}
@@ -148,9 +144,7 @@ func (p *miniMaxProvider) uploadVoiceFile(ctx context.Context, selected credenti
 }
 
 func (p *miniMaxProvider) cloneVoice(ctx context.Context, selected credential, request *speech.CloneVoiceRequest) (*speech.CloneVoiceResponse, error) {
-	if ctx == nil {
-		return nil, ErrNilContext
-	}
+	ctx = normalizeContext(ctx)
 	if request == nil || request.FileID <= 0 || strings.TrimSpace(request.VoiceID) == "" {
 		return nil, fmt.Errorf("%w: MiniMax file_id and voice_id are required", ErrInvalidRequest)
 	}

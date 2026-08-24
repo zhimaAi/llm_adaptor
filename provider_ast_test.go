@@ -46,31 +46,49 @@ func TestProvidersDoNotSerializePublicRequestsDirectly(t *testing.T) {
 	}
 }
 
-func TestBuiltInProvidersDoNotRejectUnsupportedPublicParameters(t *testing.T) {
-	entries, err := os.ReadDir(".")
+func TestPublicErrorContract(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") || entry.Name() == "errors.go" {
+	want := map[string]struct{}{
+		"ErrInvalidAPIKeyConfig":     {},
+		"ErrCredentialSelection":     {},
+		"ErrInvalidRequest":          {},
+		"ErrUnsupportedProvider":     {},
+		"UnsupportedCapabilityError": {},
+		"APIError":                   {},
+	}
+	got := make(map[string]struct{})
+	for _, declaration := range file.Decls {
+		generic, ok := declaration.(*ast.GenDecl)
+		if !ok || (generic.Tok != token.VAR && generic.Tok != token.TYPE) {
 			continue
 		}
-		path := filepath.Clean(entry.Name())
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", path, err)
+		for _, specification := range generic.Specs {
+			switch value := specification.(type) {
+			case *ast.ValueSpec:
+				for _, name := range value.Names {
+					if ast.IsExported(name.Name) {
+						got[name.Name] = struct{}{}
+					}
+				}
+			case *ast.TypeSpec:
+				if ast.IsExported(value.Name.Name) {
+					got[value.Name.Name] = struct{}{}
+				}
+			}
 		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			literal, ok := node.(*ast.CompositeLit)
-			if !ok {
-				return true
-			}
-			identifier, ok := literal.Type.(*ast.Ident)
-			if ok && identifier.Name == "UnsupportedParameterError" {
-				t.Errorf("%s constructs UnsupportedParameterError; unsupported public fields must be ignored", path)
-			}
-			return true
-		})
+	}
+	for name := range want {
+		if _, exists := got[name]; !exists {
+			t.Errorf("public error contract is missing %s", name)
+		}
+	}
+	for name := range got {
+		if _, exists := want[name]; !exists {
+			t.Errorf("errors.go unexpectedly exports %s", name)
+		}
 	}
 }
 

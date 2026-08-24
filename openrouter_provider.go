@@ -136,7 +136,7 @@ func (p *openRouterProvider) createOpenRouterImageStream(ctx context.Context, se
 	if err != nil {
 		return nil, err
 	}
-	streamContext, cancel := context.WithCancel(ctx)
+	streamContext, cancel := context.WithCancel(normalizeContext(ctx))
 	response, err := p.doStream(streamContext, selected, ChatCompletionsPath, body)
 	if err != nil {
 		cancel()

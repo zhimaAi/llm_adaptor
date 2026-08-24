@@ -177,3 +177,13 @@ func TestPublicServiceEntriesPreserveNonNilContext(t *testing.T) {
 		t.Fatal("non-nil context was not preserved")
 	}
 }
+
+func TestNewJSONRequestDefaultsNilContext(t *testing.T) {
+	request, err := newJSONRequest(nil, ClientConfig{}, "", "https://example.com", map[string]any{"ok": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Context() != context.Background() {
+		t.Fatal("nil context was not normalized to context.Background")
+	}
+}

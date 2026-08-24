@@ -130,7 +130,7 @@ func (p *claudeProvider) streamChat(ctx context.Context, selected credential, re
 	if err != nil {
 		return nil, err
 	}
-	streamContext, cancel := context.WithCancel(ctx)
+	streamContext, cancel := context.WithCancel(normalizeContext(ctx))
 	response, err := p.do(streamContext, selected, body)
 	if err != nil {
 		cancel()

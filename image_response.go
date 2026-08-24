@@ -99,6 +99,7 @@ func parseImageDataURL(value string) (string, string, error) {
 }
 
 func downloadImage(ctx context.Context, client *http.Client, provider Provider, hint, rawURL string) ([]byte, string, error) {
+	ctx = normalizeContext(ctx)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", err
@@ -150,17 +151,6 @@ func normalizeImageFormat(format string) string {
 		return "jpeg"
 	case imageFormatPNG, "webp", "gif":
 		return format
-	default:
-		return ""
-	}
-}
-
-func imageMIMEType(format string) string {
-	switch format {
-	case "jpeg", "jpg":
-		return "image/jpeg"
-	case "png", "webp", "gif":
-		return "image/" + format
 	default:
 		return ""
 	}
