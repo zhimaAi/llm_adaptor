@@ -32,13 +32,8 @@ func configureChat(spec *openai.Spec, _ provider.Config) {
 }
 
 func applyNativeReasoningEffort(effort chat.ReasoningEffort, body map[string]any) {
-	if effort == chat.ReasoningEffortNone {
-		delete(body, "reasoning_effort")
-		body["thinking"] = map[string]any{"type": "disabled"}
-		return
-	}
 	switch effort {
-	case chat.ReasoningEffortMinimal, chat.ReasoningEffortLow, chat.ReasoningEffortMedium, chat.ReasoningEffortHigh:
+	case chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow, chat.ReasoningEffortMedium, chat.ReasoningEffortHigh:
 		body["reasoning_effort"] = string(chat.ReasoningEffortHigh)
 	case chat.ReasoningEffortXHigh, chat.ReasoningEffortMax:
 		body["reasoning_effort"] = string(chat.ReasoningEffortMax)

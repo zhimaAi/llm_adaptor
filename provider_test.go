@@ -536,6 +536,7 @@ func TestCriticalProviderFlows(t *testing.T) {
 			{name: "Zhipu user", provider: ProviderZhipu, model: "glm-4.5", wantUserID: true},
 			{name: "Ollama minimal", provider: ProviderOllama, model: "qwen3", effort: chat.ReasoningEffortMinimal, wantReasoningKey: "think", wantReasoningValue: "low"},
 			{name: "Ollama unknown", provider: ProviderOllama, model: "qwen3", effort: chat.ReasoningEffort("future"), wantReasoningKey: "think", wantReasoningValue: true},
+			{name: "Baidu native none", provider: ProviderBaidu, model: "deepseek-v4-pro", effort: chat.ReasoningEffortNone, wantReasoningKey: "reasoning_effort", wantReasoningValue: "high"},
 			{name: "Baidu native high", provider: ProviderBaidu, model: "deepseek-v4-pro", effort: chat.ReasoningEffortMedium, wantReasoningKey: "reasoning_effort", wantReasoningValue: "high"},
 			{name: "Baidu native max", provider: ProviderBaidu, model: "deepseek-v4-pro", effort: chat.ReasoningEffortXHigh, wantReasoningKey: "reasoning_effort", wantReasoningValue: "max"},
 		} {
