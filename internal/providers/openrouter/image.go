@@ -186,14 +186,15 @@ func openRouterInputImages(inputs []image.File) ([]string, error) {
 }
 
 type openRouterImageStream struct {
-	ctx      context.Context
-	scanner  *bufio.Scanner
-	terminal *transport.StreamTerminal
-	config   provider.Config
-	selected provider.Credential
-	request  shared.ImageRequestOptions
-	size     string
-	pending  []*image.StreamChunk
+	ctx            context.Context
+	scanner        *bufio.Scanner
+	terminal       *transport.StreamTerminal
+	config         provider.Config
+	selected       provider.Credential
+	request        shared.ImageRequestOptions
+	size           string
+	pending        []*image.StreamChunk
+	nextImageIndex int
 }
 
 func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
@@ -239,9 +240,10 @@ func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
 					return nil, s.terminal.Fail(s.ctx, err)
 				}
 				s.pending = append(s.pending, &image.StreamChunk{
-					B64JSON: data.B64JSON, PartialImageIndex: len(s.pending), Created: wire.Created,
+					B64JSON: data.B64JSON, PartialImageIndex: s.nextImageIndex, Created: wire.Created,
 					OutputFormat: format, Size: s.size,
 				})
+				s.nextImageIndex++
 			}
 		}
 		if wire.Usage != nil {

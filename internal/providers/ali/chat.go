@@ -9,6 +9,15 @@ import (
 )
 
 func configureChat(spec *openai.Spec, _ provider.Config) {
+	spec.ChatFields = openai.FieldsWithout(
+		openai.AllChatFields,
+		"frequency_penalty",
+		"max_completion_tokens",
+		"parallel_tool_calls",
+		"response_format",
+		"tool_choice",
+		"user",
+	)
 	spec.SupportsInputAudio = true
 	spec.SupportsVideoURL = true
 	spec.ApplyReasoning = shared.ApplyReasoningBoolean("enable_thinking")

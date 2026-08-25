@@ -55,6 +55,8 @@ type Spec struct {
 	ChatFields          FieldSet
 	EmbeddingFields     FieldSet
 	ImageFields         FieldSet
+	ChatFieldAliases    map[string]string
+	EmbeddingAliases    map[string]string
 	SupportsInputAudio  bool
 	SupportsVideoURL    bool
 	ApplyReasoning      ReasoningFunc
@@ -66,10 +68,19 @@ func DefaultSpec(info provider.Info) Spec {
 		Info:                info,
 		AuthorizationHeader: "Authorization",
 		AuthorizationPrefix: &prefix,
+		ChatPath:            ChatPath,
+		EmbeddingPath:       EmbeddingPath,
+		ImagePath:           ImagePath,
+		ImageEditPath:       ImageEditPath,
 		ChatFields:          AllChatFields,
 		EmbeddingFields:     AllEmbeddingFields,
 		ImageFields:         AllImageFields,
 	}
+}
+
+func (s *Spec) SetImagePaths(generatePath, editPath string) {
+	s.ImagePath = generatePath
+	s.ImageEditPath = editPath
 }
 
 func Definition(baseURL, serviceBaseURL string, credentialsOptional bool, info provider.Info, configure ...ConfigureFunc) provider.Definition {
@@ -94,5 +105,16 @@ func filterFields(body map[string]any, supported, known FieldSet) {
 		if _, ok := supported[field]; !ok {
 			delete(body, field)
 		}
+	}
+}
+
+func applyFieldAliases(body map[string]any, aliases map[string]string) {
+	for source, target := range aliases {
+		value, exists := body[source]
+		if !exists {
+			continue
+		}
+		delete(body, source)
+		body[target] = value
 	}
 }

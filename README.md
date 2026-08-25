@@ -41,7 +41,7 @@ client, err := llm.NewClient(llm.ClientConfig{
 - 根包只提供 `Client`、配置、错误、APIKey 选择和五类服务门面。
 - `chat`、`embedding`、`image`、`rerank`、`speech` 定义稳定的公共请求与响应。
 - 每个模型服务商在 `internal/providers` 下拥有独立目录，并按能力拆分实现文件。
-- OpenAI-compatible 协议复用位于 `internal/protocol/openai`；HTTP、SSE、URL、Context、ExtraBody 和流状态由内部共享层实现。
+- OpenAI-compatible 协议复用位于 `internal/protocol/openai`；`DefaultSpec` 提供完整 OpenAI 默认路径、字段、Bearer 鉴权和响应处理，各 Provider 目录只声明与默认协议不同的字段、路径、鉴权或转换。HTTP、SSE、URL、Context、ExtraBody 和流状态由内部共享层实现。
 
 新增服务商时应注册新的 Provider Definition，并复用公共协议 Spec；调用应用不需要依赖任何 `internal` 包。
 
@@ -169,6 +169,8 @@ BAAI 的 APIKey 可选：不传时不发送鉴权 Header；传入时 Embedding �
 公共请求允许调用方始终使用同一套字段。Provider 不支持的公共字段会被静默忽略，不会阻断请求；支持字段的非法值仍返回 `ErrInvalidRequest`。多模态 Part、Tool 或编辑图片中只有部分输入可用时，适配器保留可转换部分；过滤后没有必要输入时返回 `ErrInvalidRequest`，避免发送空消息或空编辑请求。
 
 Chat、Embedding 和 Image 的通用 Builder 通过各 Provider 目录提供的 Spec 提取字段。OpenAI、Azure v1、OpenAI Agent、302.AI 和 OpenRouter 使用完整的 OpenAI 常用字段；Cohere、MiniMax、星火、Ollama 等兼容协议只发送其明确支持的字段。原生协议 Provider 继续使用自己的内部请求 DTO。所有 Provider 都不会直接把公共请求结构序列化为请求 Body。
+
+`DefaultSpec` 的标准路径为 `/chat/completions`、`/embeddings`、`/images/generations` 和 `/images/edits`。Provider 只覆盖差异路径，例如 302.AI 使用 `/v1/chat/completions`、`/302/images/generations` 和 `/302/images/edits`；Image Generate/Edit 路径通过同一个成组配置入口设置，避免只覆盖其中一个操作。
 
 所有带 `context.Context` 的公开服务入口都接受 `nil`，并将其视为 `context.Background()`。需要主动取消或设置超时时，调用方仍应传入自己的 Context。
 

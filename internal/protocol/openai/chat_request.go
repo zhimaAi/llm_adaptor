@@ -150,6 +150,7 @@ func BuildChatRequest(spec Spec, request *chat.CreateRequest, stream bool, strea
 		return nil, err
 	}
 	filterFields(body, spec.ChatFields, AllChatFields)
+	applyFieldAliases(body, spec.ChatFieldAliases)
 	if spec.ApplyReasoning != nil {
 		spec.ApplyReasoning(request.Model, request.ReasoningEffort, body)
 	}

@@ -8,5 +8,5 @@ import (
 )
 
 func configureEmbedding(spec *openai.Spec, _ provider.Config) {
-	spec.EmbeddingFields = openai.Fields("encoding_format")
+	spec.EmbeddingFields = openai.FieldsWithout(openai.AllEmbeddingFields, "dimensions", "user")
 }

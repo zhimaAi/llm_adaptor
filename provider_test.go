@@ -401,6 +401,216 @@ func TestCriticalProviderFlows(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("302 image edit path", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.URL.Path != "/302/images/edits" {
+				t.Errorf("path = %q", request.URL.Path)
+			}
+			if err := request.ParseMultipartForm(1 << 20); err != nil {
+				t.Error(err)
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(writer, `{"data":[{"b64_json":"aGVsbG8="}],"output_format":"png"}`)
+		}))
+		defer server.Close()
+
+		client, err := NewClient(ClientConfig{Provider: Provider302AI, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}, HTTPClient: server.Client()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = client.Images.Edit(nil, &image.EditRequest{
+			Model: "image-model", Prompt: "edit", ResponseFormat: "b64_json",
+			Images: []image.File{{Filename: "input.png", ContentType: "image/png", Reader: bytes.NewBufferString("input")}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("Ali image count", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.URL.Path != "/api/v1/services/aigc/multimodal-generation/generation" {
+				t.Errorf("path = %q", request.URL.Path)
+			}
+			var body map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Error(err)
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			parameters, _ := body["parameters"].(map[string]any)
+			if parameters["n"] != float64(2) {
+				t.Errorf("parameters.n = %#v", parameters["n"])
+			}
+			if _, exists := parameters["max_images"]; exists {
+				t.Errorf("unexpected max_images: %#v", parameters)
+			}
+			if _, exists := parameters["sequential_image_generation"]; exists {
+				t.Errorf("unexpected sequential_image_generation: %#v", parameters)
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(writer, `{"output":{"choices":[{"message":{"content":[{"image":"data:image/png;base64,aGVsbG8="}]}}]}}`)
+		}))
+		defer server.Close()
+
+		count := 2
+		client, err := NewClient(ClientConfig{
+			Provider: ProviderAli, BaseURL: server.URL, ServiceBaseURL: server.URL,
+			Credentials: CredentialConfig{APIKeys: "key"}, HTTPClient: server.Client(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = client.Images.Generate(nil, &image.GenerateRequest{
+			Model: "qwen-image", Prompt: "draw", N: &count, ResponseFormat: "b64_json", OutputFormat: "png",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("Embedding field aliases", func(t *testing.T) {
+		for _, test := range []struct {
+			name               string
+			provider           Provider
+			wantDimensionField string
+			wantUser           bool
+			wantEncodingFormat bool
+		}{
+			{name: "Voyage", provider: ProviderVoyage, wantDimensionField: "output_dimension", wantEncodingFormat: true},
+			{name: "Baidu", provider: ProviderBaidu, wantUser: true, wantEncodingFormat: true},
+			{name: "Cohere", provider: ProviderCohere, wantEncodingFormat: true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+					var body map[string]any
+					if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					if _, exists := body["dimensions"]; exists {
+						t.Errorf("unexpected dimensions: %#v", body)
+					}
+					if test.wantDimensionField != "" && body[test.wantDimensionField] != float64(1024) {
+						t.Errorf("%s = %#v", test.wantDimensionField, body[test.wantDimensionField])
+					}
+					if _, exists := body["user"]; exists != test.wantUser {
+						t.Errorf("user exists = %v, body = %#v", exists, body)
+					}
+					if _, exists := body["encoding_format"]; exists != test.wantEncodingFormat {
+						t.Errorf("encoding_format exists = %v, body = %#v", exists, body)
+					}
+					writer.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(writer, `{"data":[{"index":0,"embedding":[1]}]}`)
+				}))
+				defer server.Close()
+
+				dimensions := 1024
+				input := "hello"
+				client, err := NewClient(ClientConfig{Provider: test.provider, BaseURL: server.URL, ServiceBaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}, HTTPClient: server.Client()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = client.Embeddings.Create(nil, &embedding.CreateRequest{
+					Model: "embedding-model", Input: embedding.Input{Text: &input}, EncodingFormat: "float", Dimensions: &dimensions, User: "user",
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	})
+
+	t.Run("Chat field aliases and reasoning", func(t *testing.T) {
+		for _, test := range []struct {
+			name               string
+			provider           Provider
+			model              string
+			effort             chat.ReasoningEffort
+			wantUserID         bool
+			wantReasoningKey   string
+			wantReasoningValue any
+		}{
+			{name: "Zhipu user", provider: ProviderZhipu, model: "glm-4.5", wantUserID: true},
+			{name: "Ollama minimal", provider: ProviderOllama, model: "qwen3", effort: chat.ReasoningEffortMinimal, wantReasoningKey: "think", wantReasoningValue: "low"},
+			{name: "Ollama unknown", provider: ProviderOllama, model: "qwen3", effort: chat.ReasoningEffort("future"), wantReasoningKey: "think", wantReasoningValue: true},
+			{name: "Baidu native high", provider: ProviderBaidu, model: "deepseek-v4-pro", effort: chat.ReasoningEffortMedium, wantReasoningKey: "reasoning_effort", wantReasoningValue: "high"},
+			{name: "Baidu native max", provider: ProviderBaidu, model: "deepseek-v4-pro", effort: chat.ReasoningEffortXHigh, wantReasoningKey: "reasoning_effort", wantReasoningValue: "max"},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+					var body map[string]any
+					if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					if test.wantUserID {
+						if body["user_id"] != "user" {
+							t.Errorf("user_id = %#v", body["user_id"])
+						}
+						if _, exists := body["user"]; exists {
+							t.Errorf("unexpected user: %#v", body)
+						}
+					}
+					if test.wantReasoningKey != "" && body[test.wantReasoningKey] != test.wantReasoningValue {
+						t.Errorf("%s = %#v, want %#v", test.wantReasoningKey, body[test.wantReasoningKey], test.wantReasoningValue)
+					}
+					writer.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(writer, `{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`)
+				}))
+				defer server.Close()
+
+				client, err := NewClient(ClientConfig{Provider: test.provider, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}, HTTPClient: server.Client()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = client.Chat.Create(nil, &chat.CreateRequest{
+					Model: test.model, Messages: []chat.Message{{Role: chat.RoleUser, Content: chat.TextContent("hello")}},
+					User: "user", ReasoningEffort: test.effort,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	})
+
+	t.Run("OpenRouter image stream indexes across events", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(writer, "data: {\"created\":1,\"choices\":[{\"delta\":{\"images\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,b25l\"}}]}}]}\n\n")
+			_, _ = io.WriteString(writer, "data: {\"created\":1,\"choices\":[{\"delta\":{\"images\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,dHdv\"}}]}}]}\n\n")
+			_, _ = io.WriteString(writer, "data: {\"created\":1,\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n")
+			_, _ = io.WriteString(writer, "data: [DONE]\n\n")
+		}))
+		defer server.Close()
+
+		client, err := NewClient(ClientConfig{Provider: ProviderOpenRouter, BaseURL: server.URL, Credentials: CredentialConfig{APIKeys: "key"}, HTTPClient: server.Client()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream, err := client.Images.Stream(nil, &image.StreamRequest{GenerateRequest: image.GenerateRequest{Model: "image-model", Prompt: "draw", OutputFormat: "png"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stream.Close()
+		first, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		usage, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first.PartialImageIndex != 0 || second.PartialImageIndex != 1 || usage.Usage.TotalTokens != 3 {
+			t.Fatalf("unexpected chunks: first=%#v second=%#v usage=%#v", first, second, usage)
+		}
+	})
 }
 
 func TestOpenAIAgentPublicContract(t *testing.T) {

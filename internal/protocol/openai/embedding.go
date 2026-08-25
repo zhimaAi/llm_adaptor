@@ -34,15 +34,12 @@ func (p *Provider) CreateEmbedding(ctx context.Context, selected provider.Creden
 		return nil, err
 	}
 	filterFields(body, p.spec.EmbeddingFields, AllEmbeddingFields)
+	applyFieldAliases(body, p.spec.EmbeddingAliases)
 	body, err = shared.MergeExtraBody(body, request.ExtraBody)
 	if err != nil {
 		return nil, err
 	}
-	path := p.spec.EmbeddingPath
-	if path == "" {
-		path = EmbeddingPath
-	}
-	raw, err := p.DoJSON(ctx, selected, path, body)
+	raw, err := p.DoJSON(ctx, selected, p.spec.EmbeddingPath, body)
 	if err != nil {
 		return nil, err
 	}

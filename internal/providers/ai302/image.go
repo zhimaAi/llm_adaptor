@@ -7,4 +7,6 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 )
 
-func configureImage(spec *openai.Spec, _ provider.Config) { spec.ImagePath = "/302/images/generations" }
+func configureImage(spec *openai.Spec, _ provider.Config) {
+	spec.SetImagePaths("/302/images/generations", "/302/images/edits")
+}

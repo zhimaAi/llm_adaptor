@@ -7,4 +7,6 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 )
 
-func configureEmbedding(_ *openai.Spec, _ provider.Config) {}
+func configureEmbedding(spec *openai.Spec, _ provider.Config) {
+	spec.EmbeddingFields = openai.FieldsWithout(openai.AllEmbeddingFields, "user")
+}

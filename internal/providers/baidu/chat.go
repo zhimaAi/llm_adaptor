@@ -10,11 +10,16 @@ import (
 )
 
 var enableThinkingPrefixes = []string{"qwen3-", "ernie-4.5-turbo-vl", "ernie-4.5-vl-28b-a3b", "ernie-5.0-thinking-preview"}
+var reasoningEffortPrefixes = []string{"deepseek-v4-pro", "deepseek-v4-flash"}
 
 func configureChat(spec *openai.Spec, _ provider.Config) {
 	spec.ChatFields = openai.Fields("frequency_penalty", "max_tokens", "max_completion_tokens", "presence_penalty", "response_format", "stop", "temperature", "tool_choice", "tools", "top_p", "user", "stream_options")
 	spec.ApplyReasoning = func(model string, effort chat.ReasoningEffort, body map[string]any) {
 		if effort == "" {
+			return
+		}
+		if openai.HasModelPrefix(model, reasoningEffortPrefixes...) {
+			applyNativeReasoningEffort(effort, body)
 			return
 		}
 		if openai.HasModelPrefix(model, enableThinkingPrefixes...) {
@@ -23,5 +28,21 @@ func configureChat(spec *openai.Spec, _ provider.Config) {
 			return
 		}
 		shared.ApplyThinkingType(model, effort, body)
+	}
+}
+
+func applyNativeReasoningEffort(effort chat.ReasoningEffort, body map[string]any) {
+	if effort == chat.ReasoningEffortNone {
+		delete(body, "reasoning_effort")
+		body["thinking"] = map[string]any{"type": "disabled"}
+		return
+	}
+	switch effort {
+	case chat.ReasoningEffortMinimal, chat.ReasoningEffortLow, chat.ReasoningEffortMedium, chat.ReasoningEffortHigh:
+		body["reasoning_effort"] = string(chat.ReasoningEffortHigh)
+	case chat.ReasoningEffortXHigh, chat.ReasoningEffortMax:
+		body["reasoning_effort"] = string(chat.ReasoningEffortMax)
+	default:
+		body["reasoning_effort"] = string(effort)
 	}
 }

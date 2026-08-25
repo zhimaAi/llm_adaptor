@@ -40,11 +40,7 @@ func (p *Provider) GenerateImage(ctx context.Context, selected provider.Credenti
 	if err != nil {
 		return nil, err
 	}
-	path := p.spec.ImagePath
-	if path == "" {
-		path = ImagePath
-	}
-	raw, err := p.DoJSON(ctx, selected, path, body)
+	raw, err := p.DoJSON(ctx, selected, p.spec.ImagePath, body)
 	if err != nil {
 		return nil, err
 	}
@@ -67,12 +63,8 @@ func (p *Provider) StreamImage(ctx context.Context, selected provider.Credential
 	if err != nil {
 		return nil, err
 	}
-	path := p.spec.ImagePath
-	if path == "" {
-		path = ImagePath
-	}
 	streamContext, cancel := context.WithCancel(shared.NormalizeContext(ctx))
-	response, err := p.DoStream(streamContext, selected, path, body)
+	response, err := p.DoStream(streamContext, selected, p.spec.ImagePath, body)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -89,11 +81,7 @@ func (p *Provider) EditImage(ctx context.Context, selected provider.Credential, 
 	if err != nil {
 		return nil, err
 	}
-	path := p.spec.ImageEditPath
-	if path == "" {
-		path = ImageEditPath
-	}
-	response, err := p.DoMultipart(ctx, selected, path, contentType, body)
+	response, err := p.DoMultipart(ctx, selected, p.spec.ImageEditPath, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -121,12 +109,8 @@ func (p *Provider) StreamImageEdit(ctx context.Context, selected provider.Creden
 	if err != nil {
 		return nil, err
 	}
-	path := p.spec.ImageEditPath
-	if path == "" {
-		path = ImageEditPath
-	}
 	streamContext, cancel := context.WithCancel(shared.NormalizeContext(ctx))
-	response, err := p.DoMultipart(streamContext, selected, path, contentType, body)
+	response, err := p.DoMultipart(streamContext, selected, p.spec.ImageEditPath, contentType, body)
 	if err != nil {
 		cancel()
 		return nil, err

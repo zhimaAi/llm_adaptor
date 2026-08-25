@@ -78,3 +78,32 @@ func TestAccumulatorMergesStandardMessageDeltas(t *testing.T) {
 		t.Fatalf("unexpected annotations: %#v", message.Annotations)
 	}
 }
+
+func TestAccumulatorMergesLogProbs(t *testing.T) {
+	accumulator := NewAccumulator()
+	chunks := []*StreamChunk{
+		{Choices: []ChunkChoice{{Index: 0, LogProbs: &LogProbs{
+			Content: []TokenLogProb{{Token: "first"}},
+			Refusal: []TokenLogProb{{Token: "blocked-first"}},
+		}}}},
+		{Choices: []ChunkChoice{{Index: 0, LogProbs: &LogProbs{
+			Content: []TokenLogProb{{Token: "second"}},
+			Refusal: []TokenLogProb{{Token: "blocked-second"}},
+		}}}},
+	}
+	for _, chunk := range chunks {
+		if err := accumulator.Add(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logProbs := accumulator.Response().Choices[0].LogProbs
+	if logProbs == nil {
+		t.Fatal("logprobs is nil")
+	}
+	if len(logProbs.Content) != 2 || logProbs.Content[0].Token != "first" || logProbs.Content[1].Token != "second" {
+		t.Fatalf("unexpected content logprobs: %#v", logProbs.Content)
+	}
+	if len(logProbs.Refusal) != 2 || logProbs.Refusal[0].Token != "blocked-first" || logProbs.Refusal[1].Token != "blocked-second" {
+		t.Fatalf("unexpected refusal logprobs: %#v", logProbs.Refusal)
+	}
+}

@@ -9,4 +9,5 @@ import (
 
 func configureEmbedding(spec *openai.Spec, _ provider.Config) {
 	spec.EmbeddingFields = openai.Fields("encoding_format", "dimensions")
+	spec.EmbeddingAliases = map[string]string{"dimensions": "output_dimension"}
 }

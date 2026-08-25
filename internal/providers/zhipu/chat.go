@@ -9,5 +9,15 @@ import (
 )
 
 func configureChat(spec *openai.Spec, _ provider.Config) {
+	spec.ChatFields = openai.FieldsWithout(
+		openai.AllChatFields,
+		"frequency_penalty",
+		"max_completion_tokens",
+		"n",
+		"parallel_tool_calls",
+		"presence_penalty",
+		"seed",
+	)
+	spec.ChatFieldAliases = map[string]string{"user": "user_id"}
 	spec.ApplyReasoning = shared.ApplyThinkingType
 }

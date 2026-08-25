@@ -49,8 +49,10 @@ func (p *Provider) createImage(ctx context.Context, selected provider.Credential
 		parameters["size"] = size
 	}
 	if n != nil {
-		parameters["max_images"] = *n
-		parameters["sequential_image_generation"] = *n > 1
+		if *n <= 0 {
+			return nil, fmt.Errorf("%w: image count must be greater than zero", provider.ErrInvalidRequest)
+		}
+		parameters["n"] = *n
 	}
 	content := []any{map[string]any{"text": prompt}}
 	for _, inputImage := range images {

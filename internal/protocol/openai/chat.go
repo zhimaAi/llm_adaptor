@@ -24,11 +24,7 @@ func (p *Provider) CreateChat(ctx context.Context, selected provider.Credential,
 	if err != nil {
 		return nil, err
 	}
-	path := p.spec.ChatPath
-	if path == "" {
-		path = ChatPath
-	}
-	raw, err := p.DoJSON(ctx, selected, path, body)
+	raw, err := p.DoJSON(ctx, selected, p.spec.ChatPath, body)
 	if err != nil {
 		return nil, err
 	}
@@ -51,12 +47,8 @@ func (p *Provider) StreamChat(ctx context.Context, selected provider.Credential,
 	if err != nil {
 		return nil, err
 	}
-	path := p.spec.ChatPath
-	if path == "" {
-		path = ChatPath
-	}
 	streamContext, cancel := context.WithCancel(shared.NormalizeContext(ctx))
-	response, err := p.DoStream(streamContext, selected, path, body)
+	response, err := p.DoStream(streamContext, selected, p.spec.ChatPath, body)
 	if err != nil {
 		cancel()
 		return nil, err

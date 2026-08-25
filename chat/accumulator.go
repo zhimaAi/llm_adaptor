@@ -47,12 +47,25 @@ func (a *Accumulator) Add(chunk *StreamChunk) error {
 		choice.Message.FunctionCall = appendFunctionCall(choice.Message.FunctionCall, chunkChoice.Delta.FunctionCall)
 		choice.Message.Audio = appendAudio(choice.Message.Audio, chunkChoice.Delta.Audio)
 		choice.Message.Annotations = append(choice.Message.Annotations, chunkChoice.Delta.Annotations...)
+		choice.LogProbs = appendLogProbs(choice.LogProbs, chunkChoice.LogProbs)
 		if chunkChoice.FinishReason != "" {
 			choice.FinishReason = chunkChoice.FinishReason
 		}
 		a.addToolCalls(chunkChoice.Index, chunkChoice.Delta.ToolCalls)
 	}
 	return nil
+}
+
+func appendLogProbs(current, delta *LogProbs) *LogProbs {
+	if delta == nil {
+		return current
+	}
+	if current == nil {
+		current = &LogProbs{}
+	}
+	current.Content = append(current.Content, delta.Content...)
+	current.Refusal = append(current.Refusal, delta.Refusal...)
+	return current
 }
 
 func appendFunctionCall(current, delta *FunctionCall) *FunctionCall {
