@@ -18,6 +18,13 @@ const (
 	OutputFormatURL OutputFormat = "url"
 )
 
+type AudioStatus int
+
+const (
+	AudioStatusStreaming AudioStatus = 1
+	AudioStatusComplete  AudioStatus = 2
+)
+
 type SubtitleType string
 
 const (
@@ -86,8 +93,8 @@ type StreamRequest struct {
 }
 
 type AudioData struct {
-	Audio  string `json:"audio,omitempty"`
-	Status int    `json:"status,omitempty"`
+	Audio  string      `json:"audio,omitempty"`
+	Status AudioStatus `json:"status,omitempty"`
 }
 
 type AudioInfo struct {
@@ -130,6 +137,13 @@ const (
 	VoiceTypeAll        VoiceType = "all"
 )
 
+type VoiceFilePurpose string
+
+const (
+	VoiceFilePurposeVoiceClone  VoiceFilePurpose = "voice_clone"
+	VoiceFilePurposePromptAudio VoiceFilePurpose = "prompt_audio"
+)
+
 type Voice struct {
 	VoiceID     string   `json:"voice_id"`
 	Description []string `json:"description,omitempty"`
@@ -150,16 +164,16 @@ type ListVoicesResponse struct {
 }
 
 type UploadVoiceFileRequest struct {
-	Purpose  string `json:"purpose"`
-	FilePath string `json:"file_path"`
+	Purpose  VoiceFilePurpose `json:"purpose"`
+	FilePath string           `json:"file_path"`
 }
 
 type UploadedFile struct {
-	FileID    int64  `json:"file_id"`
-	Bytes     int64  `json:"bytes,omitempty"`
-	CreatedAt int64  `json:"created_at,omitempty"`
-	Filename  string `json:"filename,omitempty"`
-	Purpose   string `json:"purpose,omitempty"`
+	FileID    int64            `json:"file_id"`
+	Bytes     int64            `json:"bytes,omitempty"`
+	CreatedAt int64            `json:"created_at,omitempty"`
+	Filename  string           `json:"filename,omitempty"`
+	Purpose   VoiceFilePurpose `json:"purpose,omitempty"`
 }
 
 type UploadVoiceFileResponse struct {

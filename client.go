@@ -11,15 +11,6 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/registry"
 )
 
-const (
-	DefaultBaseURLMiniMax = "https://api.minimaxi.com/v1"
-	MiniMaxSpeechPath     = "/t2a_v2"
-	ChatCompletionsPath   = "/chat/completions"
-	EmbeddingsPath        = "/embeddings"
-	ImageGenerationsPath  = "/images/generations"
-	ImageEditsPath        = "/images/edits"
-)
-
 type Client struct {
 	config      ClientConfig
 	credentials *credentialPool

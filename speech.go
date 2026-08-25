@@ -14,11 +14,6 @@ import (
 
 type SpeechService struct{ client *Client }
 
-const (
-	miniMaxVoiceClonePurpose  = "voice_clone"
-	miniMaxPromptAudioPurpose = "prompt_audio"
-)
-
 func (s SpeechService) Create(ctx context.Context, request *speech.CreateRequest) (*speech.CreateResponse, error) {
 	ctx = shared.NormalizeContext(ctx)
 	implementation, selected, err := s.speechProvider()
@@ -89,7 +84,7 @@ func (s SpeechService) CloneVoiceFromFiles(ctx context.Context, request *speech.
 	}
 	credential := internalCredential(selected)
 	result := &speech.CloneVoiceFromFilesResponse{}
-	result.SourceUpload, err = implementation.UploadVoiceFile(ctx, credential, &speech.UploadVoiceFileRequest{Purpose: miniMaxVoiceClonePurpose, FilePath: request.SourceFilePath})
+	result.SourceUpload, err = implementation.UploadVoiceFile(ctx, credential, &speech.UploadVoiceFileRequest{Purpose: speech.VoiceFilePurposeVoiceClone, FilePath: request.SourceFilePath})
 	if err != nil {
 		return nil, normalizeProviderError(err)
 	}
@@ -100,7 +95,7 @@ func (s SpeechService) CloneVoiceFromFiles(ctx context.Context, request *speech.
 	}
 	cloneRequest.FileID = result.SourceUpload.File.FileID
 	if strings.TrimSpace(request.PromptFilePath) != "" {
-		result.PromptUpload, err = implementation.UploadVoiceFile(ctx, credential, &speech.UploadVoiceFileRequest{Purpose: miniMaxPromptAudioPurpose, FilePath: request.PromptFilePath})
+		result.PromptUpload, err = implementation.UploadVoiceFile(ctx, credential, &speech.UploadVoiceFileRequest{Purpose: speech.VoiceFilePurposePromptAudio, FilePath: request.PromptFilePath})
 		if err != nil {
 			return nil, normalizeProviderError(err)
 		}

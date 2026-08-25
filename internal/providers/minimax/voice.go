@@ -25,8 +25,6 @@ const (
 	miniMaxCloneVoicePath       = "/voice_clone"
 	miniMaxUploadFileField      = "file"
 	miniMaxUploadPurposeField   = "purpose"
-	VoiceClonePurpose           = "voice_clone"
-	PromptAudioPurpose          = "prompt_audio"
 	miniMaxMaximumVoiceFileSize = int64(20 * 1024 * 1024)
 )
 
@@ -90,8 +88,8 @@ func (p *Provider) UploadVoiceFile(ctx context.Context, selected provider.Creden
 	if request == nil {
 		return nil, fmt.Errorf("%w: upload voice file request is nil", provider.ErrInvalidRequest)
 	}
-	purpose := strings.TrimSpace(request.Purpose)
-	if purpose != VoiceClonePurpose && purpose != PromptAudioPurpose {
+	purpose := speech.VoiceFilePurpose(strings.TrimSpace(string(request.Purpose)))
+	if purpose != speech.VoiceFilePurposeVoiceClone && purpose != speech.VoiceFilePurposePromptAudio {
 		return nil, fmt.Errorf("%w: unsupported MiniMax voice file purpose %q", provider.ErrInvalidRequest, purpose)
 	}
 	file, err := os.Open(request.FilePath)
@@ -109,7 +107,7 @@ func (p *Provider) UploadVoiceFile(ctx context.Context, selected provider.Creden
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField(miniMaxUploadPurposeField, purpose); err != nil {
+	if err := writer.WriteField(miniMaxUploadPurposeField, string(purpose)); err != nil {
 		return nil, err
 	}
 	part, err := writer.CreateFormFile(miniMaxUploadFileField, filepath.Base(request.FilePath))

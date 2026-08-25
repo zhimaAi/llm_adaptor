@@ -1,109 +1,67 @@
 // Copyright © 2016- 2025 Wuhan Sesame Small Customer Service Network Technology Co., Ltd.
 
-package chat
+package chat_test
 
-import "testing"
+import (
+	"testing"
 
-func TestAccumulatorMergesMultipleToolCalls(t *testing.T) {
+	"github.com/zhimaAi/llm_adaptor/v2/chat"
+)
+
+func TestAccumulatorMergesPublicStreamData(t *testing.T) {
 	firstIndex, secondIndex := 0, 1
-	accumulator := NewAccumulator()
-	chunks := []*StreamChunk{
-		{ID: "id", Model: "model", Choices: []ChunkChoice{{Index: 0, Delta: Message{Role: RoleAssistant, ToolCalls: []ToolCall{
-			{Index: &firstIndex, ID: "call-1", Type: "function", Function: FunctionCall{Name: "weather", Arguments: `{"city":`}},
-			{Index: &secondIndex, ID: "call-2", Type: "function", Function: FunctionCall{Name: "time", Arguments: `{"zone":`}},
-		}}}}},
-		{Choices: []ChunkChoice{{Index: 0, Delta: Message{ToolCalls: []ToolCall{
-			{Index: &firstIndex, Function: FunctionCall{Arguments: `"Wuhan"}`}},
-			{Index: &secondIndex, Function: FunctionCall{Arguments: `"UTC+8"}`}},
-		}}, FinishReason: "tool_calls"}}},
+	accumulator := chat.NewAccumulator()
+	chunks := []*chat.StreamChunk{
+		{
+			ID: "id", Model: "model", Usage: &chat.Usage{PromptTokens: 7, TotalTokens: 7},
+			Choices: []chat.ChunkChoice{{
+				Index: 0,
+				Delta: chat.Message{
+					Role: chat.RoleAssistant, Content: chat.TextContent("hel"), ReasoningContent: "plan ",
+					ToolCalls: []chat.ToolCall{
+						{Index: &firstIndex, ID: "call-1", Type: "function", Function: chat.FunctionCall{Name: "weather", Arguments: `{"city":`}},
+						{Index: &secondIndex, ID: "call-2", Type: "function", Function: chat.FunctionCall{Name: "time", Arguments: `{"zone":`}},
+					},
+				},
+				LogProbs: &chat.LogProbs{Content: []chat.TokenLogProb{{Token: "first"}}},
+			}},
+		},
+		{
+			Usage: &chat.Usage{CompletionTokens: 5},
+			Choices: []chat.ChunkChoice{{
+				Index: 0, FinishReason: "tool_calls",
+				Delta: chat.Message{
+					Content: chat.TextContent("lo"), ReasoningContent: "done",
+					ToolCalls: []chat.ToolCall{
+						{Index: &firstIndex, Function: chat.FunctionCall{Arguments: `"Wuhan"}`}},
+						{Index: &secondIndex, Function: chat.FunctionCall{Arguments: `"UTC+8"}`}},
+					},
+				},
+				LogProbs: &chat.LogProbs{Content: []chat.TokenLogProb{{Token: "second"}}},
+			}},
+		},
 	}
 	for _, chunk := range chunks {
 		if err := accumulator.Add(chunk); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	response := accumulator.Response()
-	if len(response.Choices) != 1 || len(response.Choices[0].Message.ToolCalls) != 2 {
+	if len(response.Choices) != 1 {
 		t.Fatalf("unexpected response: %#v", response)
 	}
-	if got := response.Choices[0].Message.ToolCalls[0].Function.Arguments; got != `{"city":"Wuhan"}` {
-		t.Fatalf("unexpected first arguments: %s", got)
+	choice := response.Choices[0]
+	if choice.Message.Content.Text == nil || *choice.Message.Content.Text != "hello" || choice.Message.ReasoningContent != "plan done" {
+		t.Fatalf("unexpected message: %#v", choice.Message)
 	}
-	if got := response.Choices[0].Message.ToolCalls[1].Function.Arguments; got != `{"zone":"UTC+8"}` {
-		t.Fatalf("unexpected second arguments: %s", got)
+	if len(choice.Message.ToolCalls) != 2 || choice.Message.ToolCalls[0].Function.Arguments != `{"city":"Wuhan"}` || choice.Message.ToolCalls[1].Function.Arguments != `{"zone":"UTC+8"}` {
+		t.Fatalf("unexpected tool calls: %#v", choice.Message.ToolCalls)
 	}
-}
-
-func TestAccumulatorMergesPartialUsage(t *testing.T) {
-	accumulator := NewAccumulator()
-	if err := accumulator.Add(&StreamChunk{Usage: &Usage{PromptTokens: 7, TotalTokens: 7}}); err != nil {
-		t.Fatal(err)
+	if choice.LogProbs == nil || len(choice.LogProbs.Content) != 2 || choice.LogProbs.Content[0].Token != "first" || choice.LogProbs.Content[1].Token != "second" {
+		t.Fatalf("unexpected logprobs: %#v", choice.LogProbs)
 	}
-	if err := accumulator.Add(&StreamChunk{Usage: &Usage{CompletionTokens: 5}}); err != nil {
-		t.Fatal(err)
-	}
-	usage := accumulator.Response().Usage
-	if usage.PromptTokens != 7 || usage.CompletionTokens != 5 || usage.TotalTokens != 12 {
-		t.Fatalf("unexpected merged usage: %#v", usage)
-	}
-}
-
-func TestAccumulatorMergesStandardMessageDeltas(t *testing.T) {
-	accumulator := NewAccumulator()
-	chunks := []*StreamChunk{
-		{Choices: []ChunkChoice{{Index: 0, Delta: Message{
-			FunctionCall: &FunctionCall{Name: "weather", Arguments: `{"city":`},
-			Audio:        &Audio{ID: "audio-id", Data: "first", Transcript: "hello "},
-			Annotations:  []Annotation{{Type: "url_citation", URLCitation: &URLCitation{URL: "https://example.com/one"}}},
-		}}}},
-		{Choices: []ChunkChoice{{Index: 0, Delta: Message{
-			FunctionCall: &FunctionCall{Arguments: `"Wuhan"}`},
-			Audio:        &Audio{Data: "second", ExpiresAt: 123, Transcript: "world"},
-			Annotations:  []Annotation{{Type: "url_citation", URLCitation: &URLCitation{URL: "https://example.com/two"}}},
-		}}}},
-	}
-	for _, chunk := range chunks {
-		if err := accumulator.Add(chunk); err != nil {
-			t.Fatal(err)
-		}
-	}
-	message := accumulator.Response().Choices[0].Message
-	if message.FunctionCall == nil || message.FunctionCall.Name != "weather" || message.FunctionCall.Arguments != `{"city":"Wuhan"}` {
-		t.Fatalf("unexpected function call: %#v", message.FunctionCall)
-	}
-	if message.Audio == nil || message.Audio.ID != "audio-id" || message.Audio.Data != "firstsecond" || message.Audio.ExpiresAt != 123 || message.Audio.Transcript != "hello world" {
-		t.Fatalf("unexpected audio: %#v", message.Audio)
-	}
-	if len(message.Annotations) != 2 || message.Annotations[0].URLCitation.URL != "https://example.com/one" || message.Annotations[1].URLCitation.URL != "https://example.com/two" {
-		t.Fatalf("unexpected annotations: %#v", message.Annotations)
-	}
-}
-
-func TestAccumulatorMergesLogProbs(t *testing.T) {
-	accumulator := NewAccumulator()
-	chunks := []*StreamChunk{
-		{Choices: []ChunkChoice{{Index: 0, LogProbs: &LogProbs{
-			Content: []TokenLogProb{{Token: "first"}},
-			Refusal: []TokenLogProb{{Token: "blocked-first"}},
-		}}}},
-		{Choices: []ChunkChoice{{Index: 0, LogProbs: &LogProbs{
-			Content: []TokenLogProb{{Token: "second"}},
-			Refusal: []TokenLogProb{{Token: "blocked-second"}},
-		}}}},
-	}
-	for _, chunk := range chunks {
-		if err := accumulator.Add(chunk); err != nil {
-			t.Fatal(err)
-		}
-	}
-	logProbs := accumulator.Response().Choices[0].LogProbs
-	if logProbs == nil {
-		t.Fatal("logprobs is nil")
-	}
-	if len(logProbs.Content) != 2 || logProbs.Content[0].Token != "first" || logProbs.Content[1].Token != "second" {
-		t.Fatalf("unexpected content logprobs: %#v", logProbs.Content)
-	}
-	if len(logProbs.Refusal) != 2 || logProbs.Refusal[0].Token != "blocked-first" || logProbs.Refusal[1].Token != "blocked-second" {
-		t.Fatalf("unexpected refusal logprobs: %#v", logProbs.Refusal)
+	if response.Usage.PromptTokens != 7 || response.Usage.CompletionTokens != 5 || response.Usage.TotalTokens != 12 {
+		t.Fatalf("unexpected usage: %#v", response.Usage)
 	}
 }

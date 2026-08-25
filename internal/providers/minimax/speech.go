@@ -19,10 +19,9 @@ import (
 )
 
 const (
-	speechPath                  = "/t2a_v2"
-	miniMaxSpeechStatusComplete = 2
-	miniMaxStreamInitialBuffer  = 64 * 1024
-	miniMaxStreamMaximumBuffer  = 16 * 1024 * 1024
+	speechPath                 = "/t2a_v2"
+	miniMaxStreamInitialBuffer = 64 * 1024
+	miniMaxStreamMaximumBuffer = 16 * 1024 * 1024
 )
 
 type Provider struct {
@@ -199,7 +198,7 @@ func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
 		if chunk.BaseResponse.StatusCode != 0 {
 			return s.fail(miniMaxBusinessError(chunk.BaseResponse, chunk.TraceID, s.credentialHint, line))
 		}
-		if chunk.Data != nil && chunk.Data.Status == miniMaxSpeechStatusComplete {
+		if chunk.Data != nil && chunk.Data.Status == speech.AudioStatusComplete {
 			s.terminal.Finish()
 		}
 		return chunk, nil

@@ -82,7 +82,7 @@ func decodeMiniMaxSpeechResponse(raw []byte) (*speech.CreateResponse, error) {
 		ExtraInfo: mapMiniMaxAudioInfo(source.ExtraInfo),
 	}
 	if source.Data != nil {
-		result.Data = &speech.AudioData{Audio: source.Data.Audio, Status: source.Data.Status}
+		result.Data = &speech.AudioData{Audio: source.Data.Audio, Status: speech.AudioStatus(source.Data.Status)}
 	}
 	return result, nil
 }
@@ -97,7 +97,7 @@ func decodeMiniMaxSpeechChunk(raw []byte) (*speech.StreamChunk, error) {
 		ExtraInfo: mapMiniMaxAudioInfo(source.ExtraInfo),
 	}
 	if source.Data != nil {
-		result.Data = &speech.AudioData{Audio: source.Data.Audio, Status: source.Data.Status}
+		result.Data = &speech.AudioData{Audio: source.Data.Audio, Status: speech.AudioStatus(source.Data.Status)}
 	}
 	return result, nil
 }
@@ -121,7 +121,7 @@ func decodeMiniMaxUploadVoiceFileResponse(raw []byte) (*speech.UploadVoiceFileRe
 	return &speech.UploadVoiceFileResponse{
 		File: speech.UploadedFile{
 			FileID: source.File.FileID, Bytes: source.File.Bytes, CreatedAt: source.File.CreatedAt,
-			Filename: source.File.Filename, Purpose: source.File.Purpose,
+			Filename: source.File.Filename, Purpose: speech.VoiceFilePurpose(source.File.Purpose),
 		},
 		BaseResponse: mapMiniMaxBaseResponse(source.BaseResponse),
 	}, nil

@@ -211,6 +211,8 @@ resp, err := client.Speech.Create(ctx, &speech.CreateRequest{
 
 `client.Speech.Stream` 使用 MiniMax HTTP T2A 流式协议。MiniMax 音色管理通过 `client.Speech.ListVoices`、`UploadVoiceFile` 和 `CloneVoice` 调用，并与 T2A 一样按请求从 APIKey 池中随机选择 Key。完整的上传并克隆流程应使用 `CloneVoiceFromFiles`，它会固定同一个 Key，避免账号级 `file_id` 在后续克隆请求中失效。Speech 请求和响应直接覆盖 MiniMax 官方字段，包括 `aigc_watermark`、克隆校验参数、`TraceID`、`BaseResponse` 和 `ExtraInfo`。v2 不提供语音转写、语音翻译、WebSocket T2A 或异步长文本。
 
+流式响应可通过 `speech.AudioStatusStreaming` 和 `speech.AudioStatusComplete` 判断合成状态。直接调用 `UploadVoiceFile` 时，`Purpose` 使用 `speech.VoiceFilePurposeVoiceClone` 或 `speech.VoiceFilePurposePromptAudio`。
+
 ## 能力说明
 
 - OpenAI-compatible 驱动：OpenAI、302.AI、阿里百炼、百川、百度千帆、DeepSeek、豆包、Gemini、混元、零一万物、MiniMax、Moonshot、Ollama、OpenRouter、SiliconFlow、讯飞星火、Xinference、智谱、自建兼容服务等。
