@@ -10,6 +10,7 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/embedding"
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
+	"github.com/zhimaAi/llm_adaptor/v2/internal/transport"
 )
 
 type embeddingWireRequest struct {
@@ -51,7 +52,7 @@ func (p *Provider) CreateEmbedding(ctx context.Context, selected provider.Creden
 	}
 	result, err := DecodeEmbeddingResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(p.spec.Info.ID, selected.Hint, raw, err)
 	}
 	if len(result.Data) == 0 {
 		return nil, fmt.Errorf("%w: response contains no embeddings", provider.ErrInvalidRequest)

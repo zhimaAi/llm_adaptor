@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -140,7 +139,7 @@ func (p *Provider) decodeImageResponse(ctx context.Context, selected provider.Cr
 		return nil, err
 	}
 	var source imageWireResponse
-	if err := json.Unmarshal(raw, &source); err != nil {
+	if err := transport.DecodeJSONResponse(provider.IDDoubao, selected.Hint, raw, &source); err != nil {
 		return nil, err
 	}
 	result := &image.GenerateResponse{Created: source.Created, OutputFormat: outputFormat, Size: size}
@@ -214,7 +213,7 @@ func (s *imageStream) Recv() (*image.StreamChunk, error) {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
 		var wire imageStreamWireResponse
-		if err := json.Unmarshal(line, &wire); err != nil {
+		if err := transport.DecodeJSONResponse(provider.IDDoubao, s.selected.Hint, line, &wire); err != nil {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
 		if wire.URL != "" || wire.B64JSON != "" {

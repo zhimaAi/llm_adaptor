@@ -4,7 +4,6 @@ package ali
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -86,7 +85,7 @@ func (p *Provider) createImage(ctx context.Context, selected provider.Credential
 			} `json:"choices"`
 		} `json:"output"`
 	}
-	if err := json.Unmarshal(raw, &source); err != nil {
+	if err := transport.DecodeJSONResponse(provider.IDAli, selected.Hint, raw, &source); err != nil {
 		return nil, err
 	}
 	if source.Code != "" {

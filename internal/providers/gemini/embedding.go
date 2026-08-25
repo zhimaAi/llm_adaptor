@@ -4,7 +4,6 @@ package gemini
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -64,7 +63,7 @@ func (p *Provider) CreateEmbedding(ctx context.Context, selected provider.Creden
 				Values []float64 `json:"values"`
 			} `json:"embedding"`
 		}
-		if err := json.Unmarshal(raw, &source); err != nil {
+		if err := transport.DecodeJSONResponse(provider.IDGemini, selected.Hint, raw, &source); err != nil {
 			return nil, err
 		}
 		result.Data = append(result.Data, embedding.Data{Object: "embedding", Embedding: embedding.FloatEmbedding(source.Embedding.Values), Index: index})

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -13,11 +14,33 @@ import (
 )
 
 const (
-	HeaderAuthorization = "Authorization"
-	HeaderContentType   = "Content-Type"
-	MediaTypeJSON       = "application/json"
-	BearerPrefix        = "Bearer "
+	HeaderAuthorization        = "Authorization"
+	HeaderContentType          = "Content-Type"
+	MediaTypeJSON              = "application/json"
+	BearerPrefix               = "Bearer "
+	APIErrorTypeResponseDecode = "response_decode_error"
 )
+
+func DecodeJSONResponse(providerID provider.ID, credentialHint string, raw []byte, target any) error {
+	if err := json.Unmarshal(raw, target); err != nil {
+		return NewResponseDecodeError(providerID, credentialHint, raw, err)
+	}
+	return nil
+}
+
+func NewResponseDecodeError(providerID provider.ID, credentialHint string, raw []byte, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &provider.APIError{
+		Provider:       providerID,
+		Type:           APIErrorTypeResponseDecode,
+		Message:        fmt.Sprintf("decode JSON response: %v", err),
+		CredentialHint: credentialHint,
+		Raw:            append([]byte(nil), raw...),
+		Err:            err,
+	}
+}
 
 func NewJSONRequest(ctx context.Context, config provider.Config, authorization, url string, body any) (*http.Request, error) {
 	payload, err := json.Marshal(body)

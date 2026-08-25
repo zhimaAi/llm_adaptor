@@ -30,7 +30,7 @@ func (p *Provider) CreateChat(ctx context.Context, selected provider.Credential,
 	}
 	result, err := DecodeChatResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(p.spec.Info.ID, selected.Hint, raw, err)
 	}
 	if len(result.Choices) == 0 {
 		return nil, fmt.Errorf("%w: response contains no choices", provider.ErrInvalidRequest)
@@ -90,7 +90,7 @@ func (s *chatStream) Recv() (*chat.StreamChunk, error) {
 		}
 		chunk, err := DecodeChatStreamResponse(line)
 		if err != nil {
-			return nil, s.terminal.Fail(s.ctx, err)
+			return nil, s.terminal.Fail(s.ctx, transport.NewResponseDecodeError(s.provider, s.hint, line, err))
 		}
 		return chunk, nil
 	}

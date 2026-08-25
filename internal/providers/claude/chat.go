@@ -102,7 +102,7 @@ func (p *Provider) CreateChat(ctx context.Context, selected provider.Credential,
 		return nil, err
 	}
 	var source claudeResponse
-	if err := json.Unmarshal(raw, &source); err != nil {
+	if err := transport.DecodeJSONResponse(provider.IDClaude, selected.Hint, raw, &source); err != nil {
 		return nil, err
 	}
 	result := &chat.CreateResponse{ID: source.ID, Object: "chat.completion", Model: source.Model}
@@ -427,7 +427,7 @@ func (s *claudeStream) Recv() (*chat.StreamChunk, error) {
 				OutputTokens int `json:"output_tokens"`
 			} `json:"usage"`
 		}
-		if err := json.Unmarshal(line, &event); err != nil {
+		if err := transport.DecodeJSONResponse(provider.IDClaude, s.hint, line, &event); err != nil {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
 		chunk := &chat.StreamChunk{ID: s.id, Object: "chat.completion.chunk", Model: s.model}

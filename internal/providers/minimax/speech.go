@@ -110,7 +110,7 @@ func (p *Provider) CreateSpeech(ctx context.Context, credential provider.Credent
 	}
 	result, err := decodeMiniMaxSpeechResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(provider.IDMiniMax, credential.Hint, raw, err)
 	}
 	if result.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(result.BaseResponse, result.TraceID, credential.Hint, raw)
@@ -193,7 +193,7 @@ func (s *miniMaxSpeechStream) Recv() (*speech.StreamChunk, error) {
 		}
 		chunk, err := decodeMiniMaxSpeechChunk(line)
 		if err != nil {
-			return s.fail(err)
+			return s.fail(transport.NewResponseDecodeError(provider.IDMiniMax, s.credentialHint, line, err))
 		}
 		if chunk.BaseResponse.StatusCode != 0 {
 			return s.fail(miniMaxBusinessError(chunk.BaseResponse, chunk.TraceID, s.credentialHint, line))

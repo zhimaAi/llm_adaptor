@@ -46,7 +46,7 @@ func (p *Provider) GenerateImage(ctx context.Context, selected provider.Credenti
 	}
 	result, err := DecodeImageResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(p.spec.Info.ID, selected.Hint, raw, err)
 	}
 	options := shared.ImageRequestOptions{ResponseFormat: request.ResponseFormat, OutputFormat: request.OutputFormat}
 	if err := shared.NormalizeImageResponse(ctx, p.config, p.spec.Info.ID, selected.Hint, options, result); err != nil {
@@ -92,7 +92,7 @@ func (p *Provider) EditImage(ctx context.Context, selected provider.Credential, 
 	}
 	result, err := DecodeImageResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(p.spec.Info.ID, selected.Hint, raw, err)
 	}
 	options := shared.ImageRequestOptions{ResponseFormat: request.ResponseFormat, OutputFormat: request.OutputFormat}
 	if err := shared.NormalizeImageResponse(ctx, p.config, p.spec.Info.ID, selected.Hint, options, result); err != nil {
@@ -287,7 +287,7 @@ func (s *imageStream) Recv() (*image.StreamChunk, error) {
 			Size              string      `json:"size"`
 			Usage             image.Usage `json:"usage"`
 		}
-		if err := json.Unmarshal(line, &wire); err != nil {
+		if err := transport.DecodeJSONResponse(s.provider, s.hint, line, &wire); err != nil {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
 		chunk := &image.StreamChunk{Type: wire.Type, B64JSON: wire.B64JSON, PartialImageIndex: wire.PartialImageIndex, Created: wire.Created, Background: wire.Background, OutputFormat: wire.OutputFormat, Quality: wire.Quality, Size: wire.Size, Usage: wire.Usage}

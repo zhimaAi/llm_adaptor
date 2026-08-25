@@ -77,7 +77,7 @@ func (p *Provider) CreateRerank(ctx context.Context, selected provider.Credentia
 		return nil, err
 	}
 	var source rerankWireResponse
-	if err := json.Unmarshal(raw, &source); err != nil {
+	if err := transport.DecodeJSONResponse(p.spec.Info.ID, selected.Hint, raw, &source); err != nil {
 		return nil, err
 	}
 	result := &rerank.CreateResponse{ID: source.ID, Results: make([]rerank.Result, len(source.Results))}

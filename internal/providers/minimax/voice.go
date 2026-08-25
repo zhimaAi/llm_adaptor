@@ -75,7 +75,7 @@ func (p *Provider) ListVoices(ctx context.Context, selected provider.Credential,
 	}
 	response, err := decodeMiniMaxListVoicesResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(provider.IDMiniMax, selected.Hint, raw, err)
 	}
 	if response.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(response.BaseResponse, "", selected.Hint, raw)
@@ -138,7 +138,7 @@ func (p *Provider) UploadVoiceFile(ctx context.Context, selected provider.Creden
 	}
 	response, err := decodeMiniMaxUploadVoiceFileResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(provider.IDMiniMax, selected.Hint, raw, err)
 	}
 	if response.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(response.BaseResponse, "", selected.Hint, raw)
@@ -179,7 +179,7 @@ func (p *Provider) CloneVoice(ctx context.Context, selected provider.Credential,
 	}
 	response, err := decodeMiniMaxCloneVoiceResponse(raw)
 	if err != nil {
-		return nil, err
+		return nil, transport.NewResponseDecodeError(provider.IDMiniMax, selected.Hint, raw, err)
 	}
 	if response.BaseResponse.StatusCode != 0 {
 		return nil, miniMaxBusinessError(response.BaseResponse, "", selected.Hint, raw)

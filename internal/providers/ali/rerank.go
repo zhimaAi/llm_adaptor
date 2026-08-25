@@ -4,7 +4,6 @@ package ali
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/zhimaAi/llm_adaptor/v2/internal/protocol/openai"
@@ -69,7 +68,7 @@ func (p *Provider) CreateRerank(ctx context.Context, selected provider.Credentia
 			TotalTokens int `json:"total_tokens"`
 		} `json:"usage"`
 	}
-	if err := json.Unmarshal(raw, &source); err != nil {
+	if err := transport.DecodeJSONResponse(provider.IDAli, selected.Hint, raw, &source); err != nil {
 		return nil, err
 	}
 	wireResults := source.Output.Results

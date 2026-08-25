@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -93,7 +92,7 @@ func (p *Provider) createImage(ctx context.Context, selected provider.Credential
 		return nil, err
 	}
 	var source openRouterImageResponse
-	if err := json.Unmarshal(raw, &source); err != nil {
+	if err := transport.DecodeJSONResponse(provider.IDOpenRouter, selected.Hint, raw, &source); err != nil {
 		return nil, err
 	}
 	result := &image.GenerateResponse{Created: source.Created, Size: size, OutputFormat: outputFormat}
@@ -220,7 +219,7 @@ func (s *openRouterImageStream) Recv() (*image.StreamChunk, error) {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
 		var wire openRouterImageStreamResponse
-		if err := json.Unmarshal(line, &wire); err != nil {
+		if err := transport.DecodeJSONResponse(provider.IDOpenRouter, s.selected.Hint, line, &wire); err != nil {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
 		usage := image.Usage{}
