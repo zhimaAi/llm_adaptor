@@ -329,7 +329,10 @@ func TestCriticalProviderFlows(t *testing.T) {
 				t.Errorf("stream = %#v", body["stream"])
 			}
 			writer.Header().Set("Content-Type", "text/event-stream")
-			_, _ = io.WriteString(writer, "data: {\"created\":1,\"data\":[{\"b64_json\":\"b25l\"},{\"b64_json\":\"dHdv\"}],\"usage\":{\"output_tokens\":2,\"total_tokens\":2}}\n\ndata: [DONE]\n\n")
+			_, _ = io.WriteString(writer, "data: {\"type\":\"image_generation.partial_succeeded\",\"created\":1,\"image_index\":0,\"b64_json\":\"b25l\"}\n\n")
+			_, _ = io.WriteString(writer, "data: {\"type\":\"image_generation.partial_succeeded\",\"created\":1,\"image_index\":1,\"b64_json\":\"dHdv\"}\n\n")
+			_, _ = io.WriteString(writer, "data: {\"type\":\"image_generation.completed\",\"created\":1,\"usage\":{\"output_tokens\":2,\"total_tokens\":2}}\n\n")
+			_, _ = io.WriteString(writer, "data: [DONE]\n\n")
 		}))
 		defer server.Close()
 
@@ -350,8 +353,12 @@ func TestCriticalProviderFlows(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if first.B64JSON != "b25l" || second.B64JSON != "dHdv" || first.Usage.TotalTokens != 2 || second.Usage.TotalTokens != 0 {
-			t.Fatalf("unexpected chunks: first=%#v second=%#v", first, second)
+		usage, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first.Type != "image_generation.partial_succeeded" || first.B64JSON != "b25l" || first.PartialImageIndex != 0 || second.B64JSON != "dHdv" || second.PartialImageIndex != 1 || usage.Type != "image_generation.completed" || usage.Usage.TotalTokens != 2 {
+			t.Fatalf("unexpected chunks: first=%#v second=%#v usage=%#v", first, second, usage)
 		}
 		if _, err = stream.Recv(); err != io.EOF {
 			t.Fatalf("final error = %v, want EOF", err)

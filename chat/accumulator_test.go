@@ -47,3 +47,34 @@ func TestAccumulatorMergesPartialUsage(t *testing.T) {
 		t.Fatalf("unexpected merged usage: %#v", usage)
 	}
 }
+
+func TestAccumulatorMergesStandardMessageDeltas(t *testing.T) {
+	accumulator := NewAccumulator()
+	chunks := []*StreamChunk{
+		{Choices: []ChunkChoice{{Index: 0, Delta: Message{
+			FunctionCall: &FunctionCall{Name: "weather", Arguments: `{"city":`},
+			Audio:        &Audio{ID: "audio-id", Data: "first", Transcript: "hello "},
+			Annotations:  []Annotation{{Type: "url_citation", URLCitation: &URLCitation{URL: "https://example.com/one"}}},
+		}}}},
+		{Choices: []ChunkChoice{{Index: 0, Delta: Message{
+			FunctionCall: &FunctionCall{Arguments: `"Wuhan"}`},
+			Audio:        &Audio{Data: "second", ExpiresAt: 123, Transcript: "world"},
+			Annotations:  []Annotation{{Type: "url_citation", URLCitation: &URLCitation{URL: "https://example.com/two"}}},
+		}}}},
+	}
+	for _, chunk := range chunks {
+		if err := accumulator.Add(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	message := accumulator.Response().Choices[0].Message
+	if message.FunctionCall == nil || message.FunctionCall.Name != "weather" || message.FunctionCall.Arguments != `{"city":"Wuhan"}` {
+		t.Fatalf("unexpected function call: %#v", message.FunctionCall)
+	}
+	if message.Audio == nil || message.Audio.ID != "audio-id" || message.Audio.Data != "firstsecond" || message.Audio.ExpiresAt != 123 || message.Audio.Transcript != "hello world" {
+		t.Fatalf("unexpected audio: %#v", message.Audio)
+	}
+	if len(message.Annotations) != 2 || message.Annotations[0].URLCitation.URL != "https://example.com/one" || message.Annotations[1].URLCitation.URL != "https://example.com/two" {
+		t.Fatalf("unexpected annotations: %#v", message.Annotations)
+	}
+}

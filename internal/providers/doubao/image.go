@@ -36,6 +36,19 @@ type imageWireResponse struct {
 	} `json:"usage,omitempty"`
 }
 
+type imageStreamWireResponse struct {
+	Type       string `json:"type,omitempty"`
+	Created    int64  `json:"created,omitempty"`
+	ImageIndex *int   `json:"image_index,omitempty"`
+	URL        string `json:"url,omitempty"`
+	B64JSON    string `json:"b64_json,omitempty"`
+	Size       string `json:"size,omitempty"`
+	Usage      struct {
+		OutputTokens int `json:"output_tokens,omitempty"`
+		TotalTokens  int `json:"total_tokens,omitempty"`
+	} `json:"usage,omitempty"`
+}
+
 func (p *Provider) GenerateImage(ctx context.Context, selected provider.Credential, request *image.GenerateRequest) (*image.GenerateResponse, error) {
 	if request == nil {
 		return nil, fmt.Errorf("%w: image request is nil", provider.ErrInvalidRequest)
@@ -200,27 +213,31 @@ func (s *imageStream) Recv() (*image.StreamChunk, error) {
 		if err := transport.DecodeStreamAPIError(provider.IDDoubao, s.selected.Hint, line); err != nil {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
-		var wire imageWireResponse
+		var wire imageStreamWireResponse
 		if err := json.Unmarshal(line, &wire); err != nil {
 			return nil, s.terminal.Fail(s.ctx, err)
 		}
-		for _, item := range wire.Data {
-			data := image.Data{URL: item.URL, B64JSON: item.B64JSON}
+		if wire.URL != "" || wire.B64JSON != "" {
+			data := image.Data{URL: wire.URL, B64JSON: wire.B64JSON}
 			format, err := shared.NormalizeImageData(s.ctx, s.config, provider.IDDoubao, s.selected.Hint, s.request, &data)
 			if err != nil {
 				return nil, s.terminal.Fail(s.ctx, err)
 			}
 			chunkSize := s.size
-			if item.Size != "" {
-				chunkSize = item.Size
+			if wire.Size != "" {
+				chunkSize = wire.Size
 			}
-			s.pending = append(s.pending, &image.StreamChunk{B64JSON: data.B64JSON, PartialImageIndex: s.index, Created: wire.Created, OutputFormat: format, Size: chunkSize})
+			imageIndex := s.index
+			if wire.ImageIndex != nil {
+				imageIndex = *wire.ImageIndex
+			}
+			s.pending = append(s.pending, &image.StreamChunk{Type: wire.Type, B64JSON: data.B64JSON, PartialImageIndex: imageIndex, Created: wire.Created, OutputFormat: format, Size: chunkSize})
 			s.index++
 		}
 		if !s.usageSent && (wire.Usage.OutputTokens != 0 || wire.Usage.TotalTokens != 0) {
 			usage := image.Usage{OutputTokens: wire.Usage.OutputTokens, TotalTokens: wire.Usage.TotalTokens}
 			if len(s.pending) == 0 {
-				s.pending = append(s.pending, &image.StreamChunk{Created: wire.Created, OutputFormat: shared.NormalizeImageFormat(s.outputFormat), Size: s.size})
+				s.pending = append(s.pending, &image.StreamChunk{Type: wire.Type, Created: wire.Created, OutputFormat: shared.NormalizeImageFormat(s.outputFormat), Size: s.size})
 			}
 			s.pending[0].Usage = usage
 			s.usageSent = true

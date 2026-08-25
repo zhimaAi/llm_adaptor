@@ -44,12 +44,45 @@ func (a *Accumulator) Add(chunk *StreamChunk) error {
 		choice.Message.Content = appendMessageContent(choice.Message.Content, chunkChoice.Delta.Content)
 		choice.Message.ReasoningContent += chunkChoice.Delta.ReasoningContent
 		choice.Message.Refusal += chunkChoice.Delta.Refusal
+		choice.Message.FunctionCall = appendFunctionCall(choice.Message.FunctionCall, chunkChoice.Delta.FunctionCall)
+		choice.Message.Audio = appendAudio(choice.Message.Audio, chunkChoice.Delta.Audio)
+		choice.Message.Annotations = append(choice.Message.Annotations, chunkChoice.Delta.Annotations...)
 		if chunkChoice.FinishReason != "" {
 			choice.FinishReason = chunkChoice.FinishReason
 		}
 		a.addToolCalls(chunkChoice.Index, chunkChoice.Delta.ToolCalls)
 	}
 	return nil
+}
+
+func appendFunctionCall(current, delta *FunctionCall) *FunctionCall {
+	if delta == nil {
+		return current
+	}
+	if current == nil {
+		current = &FunctionCall{}
+	}
+	current.Name += delta.Name
+	current.Arguments += delta.Arguments
+	return current
+}
+
+func appendAudio(current, delta *Audio) *Audio {
+	if delta == nil {
+		return current
+	}
+	if current == nil {
+		current = &Audio{}
+	}
+	if delta.ID != "" {
+		current.ID = delta.ID
+	}
+	current.Data += delta.Data
+	if delta.ExpiresAt != 0 {
+		current.ExpiresAt = delta.ExpiresAt
+	}
+	current.Transcript += delta.Transcript
+	return current
 }
 
 func mergeUsage(current *Usage, incoming Usage) {
