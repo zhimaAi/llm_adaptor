@@ -2,6 +2,8 @@
 
 package image
 
+import "io"
+
 type GenerateRequest struct {
 	Model          string         `json:"model,omitempty"`
 	Prompt         string         `json:"prompt"`
@@ -18,15 +20,16 @@ type StreamRequest struct {
 	GenerateRequest
 }
 
-type Input struct {
-	FileID   string `json:"file_id,omitempty"`
-	ImageURL string `json:"image_url,omitempty"`
+type File struct {
+	Filename    string    `json:"filename,omitempty"`
+	ContentType string    `json:"content_type,omitempty"`
+	Reader      io.Reader `json:"-"`
 }
 
 type EditRequest struct {
 	Model          string         `json:"model,omitempty"`
-	Images         []Input        `json:"images"`
-	Mask           *Input         `json:"mask,omitempty"`
+	Images         []File         `json:"images"`
+	Mask           *File          `json:"mask,omitempty"`
 	Prompt         string         `json:"prompt"`
 	N              *int           `json:"n,omitempty"`
 	Quality        string         `json:"quality,omitempty"`

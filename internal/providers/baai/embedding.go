@@ -8,8 +8,6 @@ import (
 )
 
 func configureEmbedding(spec *openai.Spec, _ provider.Config) {
-	rawPrefix := ""
-	spec.AuthorizationPrefix = &rawPrefix
 	spec.EmbeddingPath = "/v1/embeddings"
 	spec.EmbeddingFields = openai.Fields()
 }

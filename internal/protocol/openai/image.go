@@ -9,6 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
+	"net/textproto"
+	"strconv"
 	"strings"
 
 	"github.com/zhimaAi/llm_adaptor/v2/image"
@@ -16,11 +20,6 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 	"github.com/zhimaAi/llm_adaptor/v2/internal/transport"
 )
-
-type imageInputWire struct {
-	FileID   string `json:"file_id,omitempty"`
-	ImageURL string `json:"image_url,omitempty"`
-}
 
 type imageGenerateWireRequest struct {
 	Model          string `json:"model,omitempty"`
@@ -31,19 +30,6 @@ type imageGenerateWireRequest struct {
 	Size           string `json:"size,omitempty"`
 	User           string `json:"user,omitempty"`
 	OutputFormat   string `json:"output_format,omitempty"`
-}
-
-type imageEditWireRequest struct {
-	Model          string           `json:"model,omitempty"`
-	Images         []imageInputWire `json:"images"`
-	Mask           *imageInputWire  `json:"mask,omitempty"`
-	Prompt         string           `json:"prompt"`
-	N              *int             `json:"n,omitempty"`
-	Quality        string           `json:"quality,omitempty"`
-	ResponseFormat string           `json:"response_format,omitempty"`
-	Size           string           `json:"size,omitempty"`
-	User           string           `json:"user,omitempty"`
-	OutputFormat   string           `json:"output_format,omitempty"`
 }
 
 func (p *Provider) GenerateImage(ctx context.Context, selected provider.Credential, request *image.GenerateRequest) (*image.GenerateResponse, error) {
@@ -96,10 +82,10 @@ func (p *Provider) StreamImage(ctx context.Context, selected provider.Credential
 }
 
 func (p *Provider) EditImage(ctx context.Context, selected provider.Credential, request *image.EditRequest) (*image.GenerateResponse, error) {
-	if request == nil || strings.TrimSpace(request.Prompt) == "" || len(request.Images) == 0 {
+	if request == nil || strings.TrimSpace(request.Prompt) == "" || !hasImageEditInput(request) {
 		return nil, fmt.Errorf("%w: image edit prompt and images are required", provider.ErrInvalidRequest)
 	}
-	body, err := buildImageEditRequest(p.spec, request, false)
+	body, contentType, err := buildImageEditRequest(p.spec, request, false)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +93,12 @@ func (p *Provider) EditImage(ctx context.Context, selected provider.Credential, 
 	if path == "" {
 		path = ImageEditPath
 	}
-	raw, err := p.DoJSON(ctx, selected, path, body)
+	response, err := p.DoMultipart(ctx, selected, path, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -123,10 +114,10 @@ func (p *Provider) EditImage(ctx context.Context, selected provider.Credential, 
 }
 
 func (p *Provider) StreamImageEdit(ctx context.Context, selected provider.Credential, request *image.EditStreamRequest) (image.Stream, error) {
-	if request == nil || strings.TrimSpace(request.Prompt) == "" || len(request.Images) == 0 {
+	if request == nil || strings.TrimSpace(request.Prompt) == "" || !hasImageEditInput(&request.EditRequest) {
 		return nil, fmt.Errorf("%w: image edit prompt and images are required", provider.ErrInvalidRequest)
 	}
-	body, err := buildImageEditRequest(p.spec, &request.EditRequest, true)
+	body, contentType, err := buildImageEditRequest(p.spec, &request.EditRequest, true)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +126,7 @@ func (p *Provider) StreamImageEdit(ctx context.Context, selected provider.Creden
 		path = ImageEditPath
 	}
 	streamContext, cancel := context.WithCancel(shared.NormalizeContext(ctx))
-	response, err := p.DoStream(streamContext, selected, path, body)
+	response, err := p.DoMultipart(streamContext, selected, path, contentType, body)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -155,48 +146,115 @@ func buildImageGenerateRequest(spec Spec, request *image.GenerateRequest, stream
 	return shared.MergeExtraBody(body, request.ExtraBody)
 }
 
-func buildImageEditRequest(spec Spec, request *image.EditRequest, stream bool) (map[string]any, error) {
-	images, err := imageInputs(request.Images)
-	if err != nil {
-		return nil, err
+func buildImageEditRequest(spec Spec, request *image.EditRequest, stream bool) ([]byte, string, error) {
+	body := map[string]any{
+		"model": request.Model, "image": append([]image.File(nil), request.Images...), "prompt": request.Prompt,
+		"n": request.N, "quality": request.Quality, "response_format": request.ResponseFormat,
+		"size": request.Size, "user": request.User, "output_format": request.OutputFormat, "stream": stream,
 	}
-	var mask *imageInputWire
 	if request.Mask != nil {
-		converted, err := imageInput(*request.Mask)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid image mask: %v", provider.ErrInvalidRequest, err)
-		}
-		mask = &converted
+		mask := *request.Mask
+		body["mask"] = mask
 	}
-	wire := imageEditWireRequest{Model: request.Model, Images: images, Mask: mask, Prompt: request.Prompt, N: request.N, Quality: request.Quality, ResponseFormat: request.ResponseFormat, Size: request.Size, User: request.User, OutputFormat: request.OutputFormat}
-	body, err := shared.MergeExtraBody(wire, nil)
-	if err != nil {
-		return nil, err
-	}
-	body["stream"] = stream
 	filterFields(body, spec.ImageFields, AllImageFields)
-	return shared.MergeExtraBody(body, request.ExtraBody)
+	for key, value := range request.ExtraBody {
+		body[key] = value
+	}
+	return encodeImageMultipart(body)
 }
 
-func imageInputs(inputs []image.Input) ([]imageInputWire, error) {
-	result := make([]imageInputWire, len(inputs))
-	for index, input := range inputs {
-		converted, err := imageInput(input)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid image input at index %d: %v", provider.ErrInvalidRequest, index, err)
+func hasImageEditInput(request *image.EditRequest) bool {
+	if request == nil {
+		return false
+	}
+	if len(request.Images) > 0 {
+		return true
+	}
+	for _, key := range []string{"image", "image[]"} {
+		if value, ok := request.ExtraBody[key]; ok && value != nil {
+			return true
 		}
-		result[index] = converted
 	}
-	return result, nil
+	return false
 }
 
-func imageInput(input image.Input) (imageInputWire, error) {
-	fileID := strings.TrimSpace(input.FileID)
-	imageURL := strings.TrimSpace(input.ImageURL)
-	if (fileID == "") == (imageURL == "") {
-		return imageInputWire{}, fmt.Errorf("exactly one of file_id or image_url is required")
+func encodeImageMultipart(body map[string]any) ([]byte, string, error) {
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	for key, value := range body {
+		if err := writeImageMultipartValue(writer, key, value); err != nil {
+			_ = writer.Close()
+			return nil, "", err
+		}
 	}
-	return imageInputWire{FileID: fileID, ImageURL: imageURL}, nil
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+func writeImageMultipartValue(writer *multipart.Writer, key string, value any) error {
+	switch typed := value.(type) {
+	case image.File:
+		return writeImageMultipartFile(writer, key, typed)
+	case *image.File:
+		if typed == nil {
+			return writer.WriteField(key, "null")
+		}
+		return writeImageMultipartFile(writer, key, *typed)
+	case []image.File:
+		fieldName := key
+		if key == "image" && len(typed) > 1 {
+			fieldName = "image[]"
+		}
+		for _, file := range typed {
+			if err := writeImageMultipartFile(writer, fieldName, file); err != nil {
+				return err
+			}
+		}
+		return nil
+	case string:
+		if typed == "" {
+			return nil
+		}
+		return writer.WriteField(key, typed)
+	case bool:
+		return writer.WriteField(key, strconv.FormatBool(typed))
+	case *bool:
+		if typed == nil {
+			return nil
+		}
+		return writer.WriteField(key, strconv.FormatBool(*typed))
+	case *int:
+		if typed == nil {
+			return nil
+		}
+		return writer.WriteField(key, strconv.Itoa(*typed))
+	case nil:
+		return writer.WriteField(key, "null")
+	default:
+		raw, err := json.Marshal(typed)
+		if err != nil {
+			return err
+		}
+		return writer.WriteField(key, string(raw))
+	}
+}
+
+func writeImageMultipartFile(writer *multipart.Writer, fieldName string, file image.File) error {
+	data, err := shared.ReadImageFile(file)
+	if err != nil {
+		return err
+	}
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": fieldName, "filename": data.Filename}))
+	header.Set("Content-Type", data.ContentType)
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		return err
+	}
+	_, err = part.Write(data.Data)
+	return err
 }
 
 type imageStream struct {

@@ -124,19 +124,29 @@ resp, err := client.Images.Generate(ctx, &image.GenerateRequest{
 })
 ```
 
-带参考图的编辑使用 Edit，不能把图片塞进 Generate 或 `ExtraBody`：
+带参考图的编辑使用统一的文件结构；OpenAI multipart、供应商 data URL 等格式由 Provider 内部转换：
 
 ```go
+file, err := os.Open("input.png")
+if err != nil {
+    return err
+}
+defer file.Close()
+
 resp, err := client.Images.Edit(ctx, &image.EditRequest{
     Model:  "gpt-image-1.5",
     Prompt: "将背景替换为雪山",
-    Images: []image.Input{
-        {ImageURL: "data:image/png;base64,..."},
+    Images: []image.File{
+        {
+            Filename:    "input.png",
+            ContentType: "image/png",
+            Reader:      file,
+        },
     },
 })
 ```
 
-Generate/Edit 分别提供 `Stream`/`EditStream`。响应完整保留 OpenAI Images 的 `Created`、`Background`、`Data`、`OutputFormat`、`Quality`、`Size` 和 token usage。请求 `b64_json` 而供应商只返回 URL 时，适配器会使用调用 Context 下载并转换；无法识别格式时，`OutputFormat` 为 `jpeg`。
+调用方负责关闭文件 Reader；适配器读取但不关闭或回卷。Generate/Edit 分别提供 `Stream`/`EditStream`。响应完整保留 OpenAI Images 的 `Created`、`Background`、`Data`、`OutputFormat`、`Quality`、`Size` 和 token usage。请求 `b64_json` 而供应商只返回 URL 时，适配器会使用调用 Context 下载并转换；无法识别格式时，`OutputFormat` 为 `jpeg`。
 
 ## Rerank
 
@@ -151,6 +161,8 @@ resp, err := client.Rerank.Create(ctx, &rerank.CreateRequest{
 ```
 
 阿里、BAAI、Cohere、Jina、SiliconFlow 和 Xinference 的私有字段与响应均在 Provider 内部转换。
+
+BAAI 的 APIKey 可选：不传时不发送鉴权 Header；传入时 Embedding 和 Rerank 都使用标准 `Authorization: Bearer <key>`。
 
 ## 不支持参数
 

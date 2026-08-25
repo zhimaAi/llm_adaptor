@@ -33,15 +33,9 @@ func (p *Provider) EditImage(ctx context.Context, selected provider.Credential, 
 	if request == nil || request.Model == "" || strings.TrimSpace(request.Prompt) == "" || len(request.Images) == 0 {
 		return nil, fmt.Errorf("%w: image model, prompt and images are required", provider.ErrInvalidRequest)
 	}
-	images := make([]string, 0, len(request.Images))
-	for _, input := range request.Images {
-		if strings.TrimSpace(input.ImageURL) != "" {
-			images = append(images, input.ImageURL)
-			continue
-		}
-		if input.FileID == "" {
-			return nil, fmt.Errorf("%w: image URL is empty", provider.ErrInvalidRequest)
-		}
+	images, err := shared.ImageFilesDataURL(request.Images)
+	if err != nil {
+		return nil, err
 	}
 	if len(images) == 0 {
 		return nil, fmt.Errorf("%w: image edit request contains no supported images", provider.ErrInvalidRequest)

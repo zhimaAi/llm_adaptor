@@ -174,16 +174,10 @@ func buildOpenRouterImageBody(model, prompt string, images []string, size string
 	return shared.MergeExtraBody(body, extraBody)
 }
 
-func openRouterInputImages(inputs []image.Input) ([]string, error) {
-	result := make([]string, 0, len(inputs))
-	for _, input := range inputs {
-		if strings.TrimSpace(input.ImageURL) != "" {
-			result = append(result, input.ImageURL)
-			continue
-		}
-		if input.FileID == "" {
-			return nil, fmt.Errorf("%w: image URL is empty", provider.ErrInvalidRequest)
-		}
+func openRouterInputImages(inputs []image.File) ([]string, error) {
+	result, err := shared.ImageFilesDataURL(inputs)
+	if err != nil {
+		return nil, err
 	}
 	if len(result) == 0 {
 		return nil, fmt.Errorf("%w: image edit request contains no supported images", provider.ErrInvalidRequest)

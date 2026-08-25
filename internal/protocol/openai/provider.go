@@ -3,6 +3,7 @@
 package openai
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -44,6 +45,29 @@ func (p *Provider) DoJSON(ctx context.Context, selected provider.Credential, pat
 }
 
 func (p *Provider) DoStream(ctx context.Context, selected provider.Credential, path string, body any) (*http.Response, error) {
+	request, err := p.newRequest(ctx, selected, path, body)
+	if err != nil {
+		return nil, err
+	}
+	return p.doRequest(selected, request)
+}
+
+func (p *Provider) DoMultipart(ctx context.Context, selected provider.Credential, path, contentType string, body []byte) (*http.Response, error) {
+	endpoint := path
+	if !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") {
+		endpoint = transport.JoinURLPath(p.config.BaseURL, path)
+	}
+	request, err := transport.NewRequest(ctx, p.config, "", endpoint, contentType, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if p.spec.AuthorizationPrefix != nil && selected.APIKey != "" {
+		request.Header.Set(p.spec.AuthorizationHeader, *p.spec.AuthorizationPrefix+selected.APIKey)
+	}
+	return p.doRequest(selected, request)
+}
+
+func (p *Provider) newRequest(ctx context.Context, selected provider.Credential, path string, body any) (*http.Request, error) {
 	endpoint := path
 	if !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") {
 		endpoint = transport.JoinURLPath(p.config.BaseURL, path)
@@ -55,6 +79,10 @@ func (p *Provider) DoStream(ctx context.Context, selected provider.Credential, p
 	if p.spec.AuthorizationPrefix != nil && selected.APIKey != "" {
 		request.Header.Set(p.spec.AuthorizationHeader, *p.spec.AuthorizationPrefix+selected.APIKey)
 	}
+	return request, nil
+}
+
+func (p *Provider) doRequest(selected provider.Credential, request *http.Request) (*http.Response, error) {
 	response, err := p.config.HTTPClient.Do(request)
 	if err != nil {
 		return nil, err

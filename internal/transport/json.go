@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
@@ -19,14 +20,18 @@ const (
 )
 
 func NewJSONRequest(ctx context.Context, config provider.Config, authorization, url string, body any) (*http.Request, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	return NewRequest(ctx, config, authorization, url, MediaTypeJSON, bytes.NewReader(payload))
+}
+
+func NewRequest(ctx context.Context, config provider.Config, authorization, url, contentType string, body io.Reader) (*http.Request, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +40,9 @@ func NewJSONRequest(ctx context.Context, config provider.Config, authorization, 
 			request.Header.Add(key, value)
 		}
 	}
-	request.Header.Set(HeaderContentType, MediaTypeJSON)
+	if contentType != "" {
+		request.Header.Set(HeaderContentType, contentType)
+	}
 	if authorization != "" {
 		request.Header.Set(HeaderAuthorization, authorization)
 	}
