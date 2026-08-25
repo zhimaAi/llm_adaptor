@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 )
@@ -19,6 +21,8 @@ const (
 	MediaTypeJSON              = "application/json"
 	BearerPrefix               = "Bearer "
 	APIErrorTypeResponseDecode = "response_decode_error"
+	responseDecodeRawMaxBytes  = 16 * 1024
+	responseDecodeRawSuffix    = "..."
 )
 
 func DecodeJSONResponse(providerID provider.ID, credentialHint string, raw []byte, target any) error {
@@ -35,11 +39,23 @@ func NewResponseDecodeError(providerID provider.ID, credentialHint string, raw [
 	return &provider.APIError{
 		Provider:       providerID,
 		Type:           APIErrorTypeResponseDecode,
-		Message:        fmt.Sprintf("decode JSON response: %v", err),
+		Message:        fmt.Sprintf("decode JSON response: %v, raw response: %q", err, responseDecodeRawSummary(raw)),
 		CredentialHint: credentialHint,
 		Raw:            append([]byte(nil), raw...),
 		Err:            err,
 	}
+}
+
+func responseDecodeRawSummary(raw []byte) string {
+	value := strings.ToValidUTF8(string(raw), "\uFFFD")
+	if len(value) <= responseDecodeRawMaxBytes {
+		return value
+	}
+	end := responseDecodeRawMaxBytes - len(responseDecodeRawSuffix)
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end] + responseDecodeRawSuffix
 }
 
 func NewJSONRequest(ctx context.Context, config provider.Config, authorization, url string, body any) (*http.Request, error) {
