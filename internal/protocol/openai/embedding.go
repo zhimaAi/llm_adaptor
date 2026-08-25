@@ -28,6 +28,12 @@ func (p *Provider) CreateEmbedding(ctx context.Context, selected provider.Creden
 	if err != nil {
 		return nil, err
 	}
+	if p.spec.TransformEmbeddingInput != nil {
+		input, err = p.spec.TransformEmbeddingInput(input)
+		if err != nil {
+			return nil, err
+		}
+	}
 	wire := embeddingWireRequest{Model: request.Model, Input: input, EncodingFormat: request.EncodingFormat, Dimensions: request.Dimensions, User: request.User}
 	body, err := shared.MergeExtraBody(wire, nil)
 	if err != nil {

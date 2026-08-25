@@ -38,28 +38,30 @@ var AllEmbeddingFields = Fields("encoding_format", "dimensions", "user")
 var AllImageFields = Fields("n", "quality", "response_format", "size", "user", "output_format", "mask")
 
 type ReasoningFunc func(model string, effort chat.ReasoningEffort, body map[string]any)
+type EmbeddingInputTransform func(input any) (any, error)
 type ConfigureFunc func(*Spec, provider.Config)
 
 type Spec struct {
-	Info                provider.Info
-	AuthorizationHeader string
-	AuthorizationPrefix *string
-	ChatPath            string
-	EmbeddingPath       string
-	ImagePath           string
-	ImageEditPath       string
-	RerankPath          string
-	RerankBaseURL       string
-	RerankDocumentsKey  string
-	RerankTopKey        string
-	ChatFields          FieldSet
-	EmbeddingFields     FieldSet
-	ImageFields         FieldSet
-	ChatFieldAliases    map[string]string
-	EmbeddingAliases    map[string]string
-	SupportsInputAudio  bool
-	SupportsVideoURL    bool
-	ApplyReasoning      ReasoningFunc
+	Info                    provider.Info
+	AuthorizationHeader     string
+	AuthorizationPrefix     *string
+	ChatPath                string
+	EmbeddingPath           string
+	ImagePath               string
+	ImageEditPath           string
+	RerankPath              string
+	RerankBaseURL           string
+	RerankDocumentsKey      string
+	RerankTopKey            string
+	ChatFields              FieldSet
+	EmbeddingFields         FieldSet
+	ImageFields             FieldSet
+	ChatFieldAliases        map[string]string
+	EmbeddingAliases        map[string]string
+	TransformEmbeddingInput EmbeddingInputTransform
+	SupportsInputAudio      bool
+	SupportsVideoURL        bool
+	ApplyReasoning          ReasoningFunc
 }
 
 func DefaultSpec(info provider.Info) Spec {
