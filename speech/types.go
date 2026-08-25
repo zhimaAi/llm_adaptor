@@ -68,7 +68,7 @@ type VoiceModification struct {
 }
 
 type StreamOptions struct {
-	ExcludeAggregatorAudio *bool `json:"exclude_aggregator_audio,omitempty"`
+	ExcludeAggregatedAudio *bool `json:"exclude_aggregated_audio,omitempty"`
 }
 
 type CreateRequest struct {

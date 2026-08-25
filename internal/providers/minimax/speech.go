@@ -80,7 +80,7 @@ type miniMaxVoiceModificationWire struct {
 }
 
 type miniMaxStreamOptionsWire struct {
-	ExcludeAggregatorAudio *bool `json:"exclude_aggregator_audio,omitempty"`
+	ExcludeAggregatedAudio *bool `json:"exclude_aggregated_audio,omitempty"`
 }
 
 func (p *Provider) CreateSpeech(ctx context.Context, credential provider.Credential, request *speech.CreateRequest) (*speech.CreateResponse, error) {
@@ -265,7 +265,7 @@ func buildMiniMaxSpeechRequest(request *speech.CreateRequest, stream bool, strea
 		}
 	}
 	if streamOptions != nil {
-		wire.StreamOptions = &miniMaxStreamOptionsWire{ExcludeAggregatorAudio: streamOptions.ExcludeAggregatorAudio}
+		wire.StreamOptions = &miniMaxStreamOptionsWire{ExcludeAggregatedAudio: streamOptions.ExcludeAggregatedAudio}
 	}
 	return shared.MergeExtraBody(wire, request.ExtraBody)
 }
