@@ -114,6 +114,7 @@ type openAIChunkChoiceResponseWire struct {
 	Delta        openAIMessageResponseWire `json:"delta"`
 	FinishReason string                    `json:"finish_reason,omitempty"`
 	LogProbs     *openAILogProbsWire       `json:"logprobs,omitempty"`
+	Usage        *openAIUsageWire          `json:"usage,omitempty"`
 }
 
 type openAIChatStreamResponseWire struct {
@@ -162,6 +163,15 @@ func DecodeChatStreamResponse(raw []byte) (*chat.StreamChunk, error) {
 	if source.Usage != nil {
 		usage := mapOpenAIUsage(*source.Usage)
 		result.Usage = &usage
+	} else {
+		for _, choice := range source.Choices {
+			if choice.Usage == nil {
+				continue
+			}
+			usage := mapOpenAIUsage(*choice.Usage)
+			result.Usage = &usage
+			break
+		}
 	}
 	for index, choice := range source.Choices {
 		delta, err := mapOpenAIMessage(choice.Delta)
