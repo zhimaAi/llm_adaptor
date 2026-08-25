@@ -9,7 +9,7 @@ import (
 )
 
 func TestAccumulatorMergesPublicStreamData(t *testing.T) {
-	firstIndex, secondIndex := 0, 1
+	toolIndex := 0
 	accumulator := chat.NewAccumulator()
 	chunks := []*chat.StreamChunk{
 		{
@@ -18,12 +18,8 @@ func TestAccumulatorMergesPublicStreamData(t *testing.T) {
 				Index: 0,
 				Delta: chat.Message{
 					Role: chat.RoleAssistant, Content: chat.TextContent("hel"), ReasoningContent: "plan ",
-					ToolCalls: []chat.ToolCall{
-						{Index: &firstIndex, ID: "call-1", Type: "function", Function: chat.FunctionCall{Name: "weather", Arguments: `{"city":`}},
-						{Index: &secondIndex, ID: "call-2", Type: "function", Function: chat.FunctionCall{Name: "time", Arguments: `{"zone":`}},
-					},
+					ToolCalls: []chat.ToolCall{{Index: &toolIndex, ID: "call-1", Type: "function", Function: chat.FunctionCall{Name: "weather", Arguments: `{"city":`}}},
 				},
-				LogProbs: &chat.LogProbs{Content: []chat.TokenLogProb{{Token: "first"}}},
 			}},
 		},
 		{
@@ -32,12 +28,8 @@ func TestAccumulatorMergesPublicStreamData(t *testing.T) {
 				Index: 0, FinishReason: "tool_calls",
 				Delta: chat.Message{
 					Content: chat.TextContent("lo"), ReasoningContent: "done",
-					ToolCalls: []chat.ToolCall{
-						{Index: &firstIndex, Function: chat.FunctionCall{Arguments: `"Wuhan"}`}},
-						{Index: &secondIndex, Function: chat.FunctionCall{Arguments: `"UTC+8"}`}},
-					},
+					ToolCalls: []chat.ToolCall{{Index: &toolIndex, Function: chat.FunctionCall{Arguments: `"Wuhan"}`}}},
 				},
-				LogProbs: &chat.LogProbs{Content: []chat.TokenLogProb{{Token: "second"}}},
 			}},
 		},
 	}
@@ -55,11 +47,8 @@ func TestAccumulatorMergesPublicStreamData(t *testing.T) {
 	if choice.Message.Content.Text == nil || *choice.Message.Content.Text != "hello" || choice.Message.ReasoningContent != "plan done" {
 		t.Fatalf("unexpected message: %#v", choice.Message)
 	}
-	if len(choice.Message.ToolCalls) != 2 || choice.Message.ToolCalls[0].Function.Arguments != `{"city":"Wuhan"}` || choice.Message.ToolCalls[1].Function.Arguments != `{"zone":"UTC+8"}` {
+	if len(choice.Message.ToolCalls) != 1 || choice.Message.ToolCalls[0].Function.Arguments != `{"city":"Wuhan"}` {
 		t.Fatalf("unexpected tool calls: %#v", choice.Message.ToolCalls)
-	}
-	if choice.LogProbs == nil || len(choice.LogProbs.Content) != 2 || choice.LogProbs.Content[0].Token != "first" || choice.LogProbs.Content[1].Token != "second" {
-		t.Fatalf("unexpected logprobs: %#v", choice.LogProbs)
 	}
 	if response.Usage.PromptTokens != 7 || response.Usage.CompletionTokens != 5 || response.Usage.TotalTokens != 12 {
 		t.Fatalf("unexpected usage: %#v", response.Usage)

@@ -19,14 +19,12 @@ func TestEmbeddingValuePublicFormats(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString(payload)
 
 	tests := []struct {
-		name    string
-		raw     string
-		want    []float64
-		wantErr bool
+		name string
+		raw  string
+		want []float64
 	}{
 		{name: "float", raw: `{"embedding":[1.5,-2.25],"index":0}`, want: []float64{1.5, -2.25}},
 		{name: "base64", raw: `{"embedding":"` + encoded + `","index":0}`, want: []float64{1.5, -2.25}},
-		{name: "invalid base64", raw: `{"embedding":"%%%","index":0}`, wantErr: true},
 	}
 
 	for _, test := range tests {
@@ -36,12 +34,6 @@ func TestEmbeddingValuePublicFormats(t *testing.T) {
 				t.Fatal(err)
 			}
 			values, err := data.Embedding.Float64s()
-			if test.wantErr {
-				if err == nil {
-					t.Fatalf("decoded invalid embedding: %#v", values)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}

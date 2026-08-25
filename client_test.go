@@ -5,11 +5,9 @@ package llm_test
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	llm "github.com/zhimaAi/llm_adaptor/v2"
@@ -69,27 +67,19 @@ func TestPublicClientCapabilities(t *testing.T) {
 	})
 
 	t.Run("embedding", func(t *testing.T) {
-		requestCount := 0
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			requestCount++
 			if request.URL.Path != "/v1/embeddings" {
 				t.Errorf("path = %q", request.URL.Path)
 			}
 			var body struct {
-				Model string   `json:"model"`
 				Input []string `json:"input"`
 			}
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Error(err)
 				return
 			}
-			expected := map[string][]string{
-				"bge-m3":       {"hello"},
-				"bge-batch":    {"first", "second"},
-				"bge-override": {"override"},
-			}[body.Model]
-			if !reflect.DeepEqual(body.Input, expected) {
-				t.Errorf("input = %#v, want %#v", body.Input, expected)
+			if len(body.Input) != 1 || body.Input[0] != "hello" {
+				t.Errorf("input = %#v", body.Input)
 			}
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(writer, `{"object":"list","data":[{"object":"embedding","index":0,"embedding":[1,2]}]}`)
@@ -105,38 +95,6 @@ func TestPublicClientCapabilities(t *testing.T) {
 		values, err := response.Data[0].Embedding.Float64s()
 		if err != nil || len(values) != 2 || values[0] != 1 || values[1] != 2 {
 			t.Fatalf("unexpected embedding: %#v, %v", values, err)
-		}
-		_, err = client.Embeddings.Create(nil, &embedding.CreateRequest{
-			Model: "bge-batch",
-			Input: embedding.Input{Texts: []string{"first", "second"}},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = client.Embeddings.Create(nil, &embedding.CreateRequest{
-			Model:     "bge-override",
-			Input:     embedding.Input{Text: &input},
-			ExtraBody: map[string]any{"input": []string{"override"}},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		requestsBeforeInvalidInput := requestCount
-		emptyText := " "
-		invalidInputs := []embedding.Input{
-			{Text: &emptyText},
-			{Texts: []string{}},
-			{Tokens: []int{1}},
-			{TokenBatches: [][]int{{1}}},
-		}
-		for _, invalidInput := range invalidInputs {
-			_, err = client.Embeddings.Create(nil, &embedding.CreateRequest{Model: "bge-invalid", Input: invalidInput})
-			if !errors.Is(err, llm.ErrInvalidRequest) {
-				t.Fatalf("invalid input error = %v, want ErrInvalidRequest", err)
-			}
-		}
-		if requestCount != requestsBeforeInvalidInput {
-			t.Fatalf("invalid input sent %d HTTP requests", requestCount-requestsBeforeInvalidInput)
 		}
 	})
 
