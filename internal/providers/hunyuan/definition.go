@@ -7,7 +7,9 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 )
 
+const DefaultBaseURL = "https://tokenhub.tencentmaas.com/v1"
+
 func Definition() provider.Definition {
-	info := provider.Info{ID: provider.IDHunyuan, DefaultBaseURL: "https://api.hunyuan.cloud.tencent.com/v1", Capabilities: []provider.Capability{provider.CapabilityChat, provider.CapabilityEmbedding}}
+	info := provider.Info{ID: provider.IDHunyuan, DefaultBaseURL: DefaultBaseURL, Capabilities: []provider.Capability{provider.CapabilityChat, provider.CapabilityEmbedding}}
 	return openai.Definition(info.DefaultBaseURL, "", false, info, configureChat, configureEmbedding)
 }
