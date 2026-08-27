@@ -91,7 +91,9 @@ resp, err := client.Chat.Create(ctx, &chat.CreateRequest{
 | Claude 支持 max、但不支持 xhigh | `xhigh` | `output_config.effort=high` |
 | 不可关闭 Claude | `none` | adaptive thinking，`output_config.effort=low` |
 | 旧版 Claude | 任意非 `none` | enabled thinking，`budget_tokens=1024` |
-| 阿里、SiliconFlow、Xinference、混元、Ollama、百度及 thinking.type 型供应商 | 任意非 `none` | 对应思考开关或 enabled 模式 |
+| 阿里、SiliconFlow、Xinference、Ollama、百度及 thinking.type 型供应商 | 任意非 `none` | 对应思考开关或 enabled 模式 |
+| 混元 | `none` | `thinking.type=disabled` |
+| 混元 | `minimal`、`xhigh`、`max` | 分别降档为 `low`、`high`、`high`；`low/medium/high` 与未知非空值原样发送为 `reasoning_effort` |
 | MiniMax M3 | `none` / 其他非空值 | disabled / adaptive，并设置 `reasoning_split` |
 | 非 M3 MiniMax | `none` / 其他非空值 | 仅设置 `reasoning_split=false/true` |
 
