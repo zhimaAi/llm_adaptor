@@ -240,6 +240,8 @@ func buildClaudeToolChoice(value any, parallel *bool) (map[string]any, error) {
 				result["type"] = "auto"
 			case "required":
 				result["type"] = "any"
+			case "none":
+				result["type"] = "none"
 			default:
 				// Ignore tool choices Claude cannot represent.
 			}
@@ -261,7 +263,7 @@ func buildClaudeToolChoice(value any, parallel *bool) (map[string]any, error) {
 			result["name"] = openAIChoice.Function.Name
 		}
 	}
-	if parallel != nil {
+	if parallel != nil && result["type"] != "none" {
 		if len(result) == 0 {
 			result["type"] = "auto"
 		}
