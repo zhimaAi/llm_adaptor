@@ -32,6 +32,11 @@ func (p *Provider) CreateChat(ctx context.Context, selected provider.Credential,
 	if err != nil {
 		return nil, transport.NewResponseDecodeError(p.spec.Info.ID, selected.Hint, raw, err)
 	}
+	if p.spec.TransformChatResponse != nil {
+		if err := p.spec.TransformChatResponse(raw, result); err != nil {
+			return nil, transport.NewResponseDecodeError(p.spec.Info.ID, selected.Hint, raw, err)
+		}
+	}
 	if len(result.Choices) == 0 {
 		return nil, fmt.Errorf("%w: response contains no choices", provider.ErrInvalidRequest)
 	}
@@ -53,22 +58,23 @@ func (p *Provider) StreamChat(ctx context.Context, selected provider.Credential,
 		cancel()
 		return nil, err
 	}
-	stream := newChatStream(streamContext, response.Body, cancel, p.spec.Info.ID, selected.Hint)
+	stream := newChatStream(streamContext, response.Body, cancel, p.spec.Info.ID, selected.Hint, p.spec.TransformStreamResponse)
 	return shared.NewThinkTagStream(stream), nil
 }
 
 type chatStream struct {
-	ctx      context.Context
-	scanner  *bufio.Scanner
-	terminal *transport.StreamTerminal
-	provider provider.ID
-	hint     string
+	ctx       context.Context
+	scanner   *bufio.Scanner
+	terminal  *transport.StreamTerminal
+	provider  provider.ID
+	hint      string
+	transform ChatStreamResponseTransform
 }
 
-func newChatStream(ctx context.Context, body io.ReadCloser, cancel context.CancelFunc, providerID provider.ID, hint string) *chatStream {
+func newChatStream(ctx context.Context, body io.ReadCloser, cancel context.CancelFunc, providerID provider.ID, hint string, transform ChatStreamResponseTransform) *chatStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, streamInitialBuffer), streamMaximumBuffer)
-	return &chatStream{ctx: ctx, scanner: scanner, terminal: transport.NewStreamTerminal(cancel, body.Close), provider: providerID, hint: hint}
+	return &chatStream{ctx: ctx, scanner: scanner, terminal: transport.NewStreamTerminal(cancel, body.Close), provider: providerID, hint: hint, transform: transform}
 }
 
 func (s *chatStream) Recv() (*chat.StreamChunk, error) {
@@ -91,6 +97,11 @@ func (s *chatStream) Recv() (*chat.StreamChunk, error) {
 		chunk, err := DecodeChatStreamResponse(line)
 		if err != nil {
 			return nil, s.terminal.Fail(s.ctx, transport.NewResponseDecodeError(s.provider, s.hint, line, err))
+		}
+		if s.transform != nil {
+			if err := s.transform(line, chunk); err != nil {
+				return nil, s.terminal.Fail(s.ctx, transport.NewResponseDecodeError(s.provider, s.hint, line, err))
+			}
 		}
 		return chunk, nil
 	}

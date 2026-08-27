@@ -39,6 +39,8 @@ var AllImageFields = Fields("n", "quality", "response_format", "size", "user", "
 
 type ReasoningFunc func(model string, effort chat.ReasoningEffort, body map[string]any)
 type EmbeddingInputTransform func(input any) (any, error)
+type ChatResponseTransform func(raw []byte, response *chat.CreateResponse) error
+type ChatStreamResponseTransform func(raw []byte, response *chat.StreamChunk) error
 type ConfigureFunc func(*Spec, provider.Config)
 
 type Spec struct {
@@ -62,6 +64,8 @@ type Spec struct {
 	SupportsInputAudio      bool
 	SupportsVideoURL        bool
 	ApplyReasoning          ReasoningFunc
+	TransformChatResponse   ChatResponseTransform
+	TransformStreamResponse ChatStreamResponseTransform
 }
 
 func DefaultSpec(info provider.Info) Spec {
