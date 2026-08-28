@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 )
@@ -27,10 +28,10 @@ func CheckHTTPResponse(providerID provider.ID, credentialHint string, response *
 	}
 	var decoded struct {
 		Error struct {
-			Code    string `json:"code"`
-			Type    string `json:"type"`
-			Param   string `json:"param"`
-			Message string `json:"message"`
+			Code    json.RawMessage `json:"code"`
+			Type    string          `json:"type"`
+			Param   string          `json:"param"`
+			Message string          `json:"message"`
 		} `json:"error"`
 		BaseResponse struct {
 			StatusCode int    `json:"status_code"`
@@ -38,7 +39,7 @@ func CheckHTTPResponse(providerID provider.ID, credentialHint string, response *
 		} `json:"base_resp"`
 	}
 	if len(raw) > 0 && json.Unmarshal(raw, &decoded) == nil {
-		apiError.Code = decoded.Error.Code
+		apiError.Code = decodeAPIErrorCode(decoded.Error.Code)
 		apiError.Type = decoded.Error.Type
 		apiError.Param = decoded.Error.Param
 		apiError.Message = decoded.Error.Message
@@ -51,4 +52,15 @@ func CheckHTTPResponse(providerID provider.ID, credentialHint string, response *
 		apiError.Message = response.Status
 	}
 	return apiError
+}
+
+func decodeAPIErrorCode(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var value string
+	if json.Unmarshal(raw, &value) == nil {
+		return value
+	}
+	return strings.TrimSpace(string(raw))
 }
