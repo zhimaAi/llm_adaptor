@@ -6,14 +6,13 @@ import (
 	"context"
 
 	internalprovider "github.com/zhimaAi/llm_adaptor/v2/internal/provider"
-	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 	"github.com/zhimaAi/llm_adaptor/v2/rerank"
 )
 
 type RerankService struct{ client *Client }
 
 func (s RerankService) Create(ctx context.Context, request *rerank.CreateRequest) (*rerank.CreateResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	if !s.client.supports(CapabilityRerank) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityRerank}
 	}

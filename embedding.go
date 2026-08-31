@@ -7,13 +7,12 @@ import (
 
 	"github.com/zhimaAi/llm_adaptor/v2/embedding"
 	internalprovider "github.com/zhimaAi/llm_adaptor/v2/internal/provider"
-	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 )
 
 type EmbeddingService struct{ client *Client }
 
 func (s EmbeddingService) Create(ctx context.Context, request *embedding.CreateRequest) (*embedding.CreateResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	if !s.client.supports(CapabilityEmbedding) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityEmbedding}
 	}

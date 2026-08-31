@@ -174,7 +174,7 @@ Chat、Embedding 和 Image 的通用 Builder 通过各 Provider 目录提供的 
 
 `DefaultSpec` 的标准路径为 `/chat/completions`、`/embeddings`、`/images/generations` 和 `/images/edits`。Provider 只覆盖差异路径，例如 302.AI 使用 `/v1/chat/completions`、`/302/images/generations` 和 `/302/images/edits`；Image Generate/Edit 路径通过同一个成组配置入口设置，避免只覆盖其中一个操作。
 
-所有带 `context.Context` 的公开服务入口都接受 `nil`，并将其视为 `context.Background()`。需要主动取消或设置超时时，调用方仍应传入自己的 Context。
+所有带 `context.Context` 的公开服务入口都接受 `nil`，并通过公开的 `llm.NormalizeContext` 将其视为 `context.Background()`。调用方在进入适配器前还需要使用 Context 时，也可以显式调用该方法；需要主动取消或设置超时时，仍应传入自己的 Context。
 
 ## ExtraBody
 

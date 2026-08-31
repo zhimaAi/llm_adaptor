@@ -100,9 +100,7 @@ func ParseImageDataURL(value string) (string, string, error) {
 }
 
 func downloadImage(ctx context.Context, client *http.Client, providerID provider.ID, hint, rawURL string) ([]byte, string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx = NormalizeContext(ctx)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", err

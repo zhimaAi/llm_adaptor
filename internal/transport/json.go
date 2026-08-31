@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
+	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 )
 
 const (
@@ -67,9 +68,7 @@ func NewJSONRequest(ctx context.Context, config provider.Config, authorization, 
 }
 
 func NewRequest(ctx context.Context, config provider.Config, authorization, url, contentType string, body io.Reader) (*http.Request, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx = shared.NormalizeContext(ctx)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, err

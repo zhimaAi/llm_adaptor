@@ -7,13 +7,12 @@ import (
 
 	"github.com/zhimaAi/llm_adaptor/v2/image"
 	internalprovider "github.com/zhimaAi/llm_adaptor/v2/internal/provider"
-	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 )
 
 type ImageService struct{ client *Client }
 
 func (s ImageService) Generate(ctx context.Context, request *image.GenerateRequest) (*image.GenerateResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	implementation, selected, err := s.generateProvider()
 	if err != nil {
 		return nil, err
@@ -23,7 +22,7 @@ func (s ImageService) Generate(ctx context.Context, request *image.GenerateReque
 }
 
 func (s ImageService) Stream(ctx context.Context, request *image.StreamRequest) (image.Stream, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	if !s.client.supports(CapabilityImage) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
 	}
@@ -43,7 +42,7 @@ func (s ImageService) Stream(ctx context.Context, request *image.StreamRequest) 
 }
 
 func (s ImageService) Edit(ctx context.Context, request *image.EditRequest) (*image.GenerateResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	if !s.client.supports(CapabilityImage) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
 	}
@@ -60,7 +59,7 @@ func (s ImageService) Edit(ctx context.Context, request *image.EditRequest) (*im
 }
 
 func (s ImageService) EditStream(ctx context.Context, request *image.EditStreamRequest) (image.Stream, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	if !s.client.supports(CapabilityImage) {
 		return nil, &UnsupportedCapabilityError{Provider: s.client.config.Provider, Capability: CapabilityImage}
 	}

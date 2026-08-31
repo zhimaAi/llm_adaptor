@@ -8,14 +8,13 @@ import (
 	"strings"
 
 	internalprovider "github.com/zhimaAi/llm_adaptor/v2/internal/provider"
-	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 	"github.com/zhimaAi/llm_adaptor/v2/speech"
 )
 
 type SpeechService struct{ client *Client }
 
 func (s SpeechService) Create(ctx context.Context, request *speech.CreateRequest) (*speech.CreateResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	implementation, selected, err := s.speechProvider()
 	if err != nil {
 		return nil, err
@@ -25,7 +24,7 @@ func (s SpeechService) Create(ctx context.Context, request *speech.CreateRequest
 }
 
 func (s SpeechService) Stream(ctx context.Context, request *speech.StreamRequest) (speech.Stream, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	implementation, selected, err := s.speechProvider()
 	if err != nil {
 		return nil, err
@@ -38,7 +37,7 @@ func (s SpeechService) Stream(ctx context.Context, request *speech.StreamRequest
 }
 
 func (s SpeechService) ListVoices(ctx context.Context, request *speech.ListVoicesRequest) (*speech.ListVoicesResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	implementation, selected, err := s.voiceProvider()
 	if err != nil {
 		return nil, err
@@ -48,7 +47,7 @@ func (s SpeechService) ListVoices(ctx context.Context, request *speech.ListVoice
 }
 
 func (s SpeechService) UploadVoiceFile(ctx context.Context, request *speech.UploadVoiceFileRequest) (*speech.UploadVoiceFileResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	implementation, selected, err := s.voiceProvider()
 	if err != nil {
 		return nil, err
@@ -58,7 +57,7 @@ func (s SpeechService) UploadVoiceFile(ctx context.Context, request *speech.Uplo
 }
 
 func (s SpeechService) CloneVoice(ctx context.Context, request *speech.CloneVoiceRequest) (*speech.CloneVoiceResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	implementation, selected, err := s.voiceProvider()
 	if err != nil {
 		return nil, err
@@ -68,7 +67,7 @@ func (s SpeechService) CloneVoice(ctx context.Context, request *speech.CloneVoic
 }
 
 func (s SpeechService) CloneVoiceFromFiles(ctx context.Context, request *speech.CloneVoiceFromFilesRequest) (*speech.CloneVoiceFromFilesResponse, error) {
-	ctx = shared.NormalizeContext(ctx)
+	ctx = NormalizeContext(ctx)
 	implementation, selected, err := s.voiceProvider()
 	if err != nil {
 		return nil, normalizeProviderError(err)
