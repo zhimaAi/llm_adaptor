@@ -44,28 +44,29 @@ type ChatStreamResponseTransform func(raw []byte, response *chat.StreamChunk) er
 type ConfigureFunc func(*Spec, provider.Config)
 
 type Spec struct {
-	Info                    provider.Info
-	AuthorizationHeader     string
-	AuthorizationPrefix     *string
-	ChatPath                string
-	EmbeddingPath           string
-	ImagePath               string
-	ImageEditPath           string
-	RerankPath              string
-	RerankBaseURL           string
-	RerankDocumentsKey      string
-	RerankTopKey            string
-	ChatFields              FieldSet
-	EmbeddingFields         FieldSet
-	ImageFields             FieldSet
-	ChatFieldAliases        map[string]string
-	EmbeddingAliases        map[string]string
-	TransformEmbeddingInput EmbeddingInputTransform
-	SupportsInputAudio      bool
-	SupportsVideoURL        bool
-	ApplyReasoning          ReasoningFunc
-	TransformChatResponse   ChatResponseTransform
-	TransformStreamResponse ChatStreamResponseTransform
+	Info                     provider.Info
+	AuthorizationHeader      string
+	AuthorizationPrefix      *string
+	ChatPath                 string
+	EmbeddingPath            string
+	ImagePath                string
+	ImageEditPath            string
+	RerankPath               string
+	RerankBaseURL            string
+	RerankDocumentsKey       string
+	RerankTopKey             string
+	ChatFields               FieldSet
+	EmbeddingFields          FieldSet
+	ImageFields              FieldSet
+	ChatFieldAliases         map[string]string
+	EmbeddingAliases         map[string]string
+	TransformEmbeddingInput  EmbeddingInputTransform
+	SupportsInputAudio       bool
+	SupportsVideoURL         bool
+	SupportsReasoningContent bool
+	ApplyReasoning           ReasoningFunc
+	TransformChatResponse    ChatResponseTransform
+	TransformStreamResponse  ChatStreamResponseTransform
 }
 
 func DefaultSpec(info provider.Info) Spec {

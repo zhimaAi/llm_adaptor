@@ -34,11 +34,12 @@ type openAIChatWireRequest struct {
 }
 
 type openAIMessageWire struct {
-	Role       string               `json:"role"`
-	Content    any                  `json:"content"`
-	Name       string               `json:"name,omitempty"`
-	ToolCalls  []openAIToolCallWire `json:"tool_calls,omitempty"`
-	ToolCallID string               `json:"tool_call_id,omitempty"`
+	ReasoningContent string               `json:"reasoning_content,omitempty"`
+	Role             string               `json:"role"`
+	Content          any                  `json:"content"`
+	Name             string               `json:"name,omitempty"`
+	ToolCalls        []openAIToolCallWire `json:"tool_calls,omitempty"`
+	ToolCallID       string               `json:"tool_call_id,omitempty"`
 }
 
 type openAIContentPartWire struct {
@@ -181,6 +182,9 @@ func buildOpenAIMessages(spec Spec, messages []chat.Message) ([]openAIMessageWir
 			Role: string(message.Role), Content: content, Name: message.Name,
 			ToolCalls: toolCalls, ToolCallID: message.ToolCallID,
 		}
+		if spec.SupportsReasoningContent && message.Role == chat.RoleAssistant {
+			result[index].ReasoningContent = message.ReasoningContent
+		}
 	}
 	return result, nil
 }
@@ -233,17 +237,6 @@ func buildOpenAIMessageContent(spec Spec, content chat.MessageContent) (any, err
 		return nil, nil
 	}
 	return parts, nil
-}
-
-func IsKnownReasoningEffort(effort chat.ReasoningEffort) bool {
-	switch effort {
-	case "", chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow,
-		chat.ReasoningEffortMedium, chat.ReasoningEffortHigh, chat.ReasoningEffortXHigh,
-		chat.ReasoningEffortMax:
-		return true
-	default:
-		return false
-	}
 }
 
 func DefaultChatStreamOptions(options *chat.StreamOptions) *chat.StreamOptions {

@@ -13,11 +13,13 @@ func configureChat(spec *openai.Spec, _ provider.Config) {
 	spec.AuthorizationHeader = "api-key"
 	spec.AuthorizationPrefix = &rawPrefix
 	spec.SupportsInputAudio = true
-	spec.ApplyReasoning = func(_ string, effort chat.ReasoningEffort, body map[string]any) {
-		if effort == "" {
-			return
-		}
-		openai.MoveMaxTokensToCompletionTokens(body)
-		delete(body, "temperature")
+	spec.ApplyReasoning = applyReasoning
+}
+
+func applyReasoning(_ string, effort chat.ReasoningEffort, body map[string]any) {
+	if effort == "" {
+		return
 	}
+	openai.MoveMaxTokensToCompletionTokens(body)
+	delete(body, "temperature")
 }

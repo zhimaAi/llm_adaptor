@@ -9,6 +9,7 @@ import (
 
 	internalprovider "github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 	"github.com/zhimaAi/llm_adaptor/v2/internal/registry"
+	"github.com/zhimaAi/llm_adaptor/v2/internal/transport"
 )
 
 type Client struct {
@@ -52,6 +53,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	if internalConfig.HTTPClient == nil {
 		internalConfig.HTTPClient = http.DefaultClient
 	}
+	internalConfig.HTTPClient = transport.WithHTTPLogging(internalConfig.HTTPClient)
 	config.BaseURL = internalConfig.BaseURL
 	config.ServiceBaseURL = internalConfig.ServiceBaseURL
 	config.HTTPClient = internalConfig.HTTPClient

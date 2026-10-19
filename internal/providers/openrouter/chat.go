@@ -31,15 +31,17 @@ type reasoningResponse struct {
 }
 
 func configureChat(spec *openai.Spec, _ provider.Config) {
-	spec.ApplyReasoning = func(_ string, effort chat.ReasoningEffort, body map[string]any) {
-		if effort == "" {
-			return
-		}
-		delete(body, "reasoning_effort")
-		body["reasoning"] = map[string]any{"effort": string(effort)}
-	}
+	spec.ApplyReasoning = applyReasoning
 	spec.TransformChatResponse = transformChatResponse
 	spec.TransformStreamResponse = transformStreamResponse
+}
+
+func applyReasoning(_ string, effort chat.ReasoningEffort, body map[string]any) {
+	if effort == "" {
+		return
+	}
+	delete(body, "reasoning_effort")
+	body["reasoning"] = map[string]any{"effort": string(effort)}
 }
 
 func transformChatResponse(raw []byte, response *chat.CreateResponse) error {
