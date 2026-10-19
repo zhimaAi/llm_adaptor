@@ -9,35 +9,29 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 )
 
-var enableThinkingPrefixes = []string{"qwen3-", "ernie-4.5-turbo-vl", "ernie-4.5-vl-28b-a3b", "ernie-5.0-thinking-preview"}
-var reasoningEffortPrefixes = []string{"deepseek-v4-pro", "deepseek-v4-flash"}
+var enableThinkingModels = []string{
+	"qwen3-235b-a22b", "qwen3-32b", "qwen3-30b-a3b", "qwen3-14b", "qwen3-8b",
+	"ernie-4.5-turbo-vl", "ernie-4.5-vl-28b-a3b", "ernie-5.0-thinking-preview",
+}
 
 func configureChat(spec *openai.Spec, _ provider.Config) {
 	spec.ChatFields = openai.Fields("frequency_penalty", "max_tokens", "max_completion_tokens", "presence_penalty", "response_format", "stop", "temperature", "tool_choice", "tools", "top_p", "user", "stream_options")
-	spec.ApplyReasoning = func(model string, effort chat.ReasoningEffort, body map[string]any) {
-		if effort == "" {
-			return
-		}
-		if openai.HasModelPrefix(model, reasoningEffortPrefixes...) {
-			applyNativeReasoningEffort(effort, body)
-			return
-		}
-		if openai.HasModelPrefix(model, enableThinkingPrefixes...) {
-			delete(body, "reasoning_effort")
-			body["enable_thinking"] = shared.ReasoningEnabled(effort)
-			return
-		}
-		shared.ApplyThinkingType(model, effort, body)
-	}
+	spec.ApplyReasoning = applyReasoning
 }
 
-func applyNativeReasoningEffort(effort chat.ReasoningEffort, body map[string]any) {
-	switch effort {
-	case chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow, chat.ReasoningEffortMedium, chat.ReasoningEffortHigh:
-		body["reasoning_effort"] = string(chat.ReasoningEffortHigh)
-	case chat.ReasoningEffortXHigh, chat.ReasoningEffortMax:
-		body["reasoning_effort"] = string(chat.ReasoningEffortMax)
-	default:
-		body["reasoning_effort"] = string(effort)
+func applyReasoning(model string, effort chat.ReasoningEffort, body map[string]any) {
+	if effort == "" {
+		return
 	}
+	if shared.IsModel(model, enableThinkingModels...) {
+		shared.ApplyReasoningBoolean("enable_thinking")(model, effort, body)
+		return
+	}
+	if shared.IsModel(model, "deepseek-v4-pro", "deepseek-v4-flash") {
+		shared.ApplyReasoningEffort(model, effort, body)
+		return
+	}
+	// Retain the existing auxiliary thinking setting for other endpoints.
+	shared.ApplyThinkingType(model, effort, body)
+	shared.ApplyReasoningEffort(model, effort, body)
 }

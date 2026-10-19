@@ -9,22 +9,30 @@ import (
 	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
 )
 
+// https://docs.volcengine.com/docs/ark/model-deprecation-migration-guide
+var switchOnlyModels = []string{
+	"doubao-seed-1-6-250615", "doubao-seed-1-6-flash-250615", "doubao-seed-1-6-flash-250828",
+	"doubao-seed-1-6-vision-250815", "doubao-seed-code-preview-251028",
+	"deepseek-v3-2-251201", "glm-4-7-251222", "kimi-k2-5-260127",
+}
+
 func configureChat(spec *openai.Spec, _ provider.Config) {
 	spec.SupportsInputAudio = true
 	spec.SupportsVideoURL = true
 	spec.SupportsReasoningContent = true
-	spec.ApplyReasoning = func(model string, effort chat.ReasoningEffort, body map[string]any) {
-		shared.ApplyThinkingType(model, effort, body)
-		if effort == "" {
-			return
-		}
-		if openai.HasModelPrefix(model, "glm-5-3") {
-			body["thinking"] = map[string]any{"type": "enabled"}
-		}
-		// ep-* inference endpoints are opaque: let Ark resolve their capabilities.
-		if openai.HasModelPrefix(model, "doubao-seed-2-", "doubao-seed-evolving", "doubao-seed-character-",
-			"doubao-seed-1-8", "doubao-seed-1-6-251015", "glm-5-", "deepseek-v4", "ep-") {
-			body["reasoning_effort"] = string(effort)
-		}
+	spec.ApplyReasoning = applyReasoning
+}
+
+func applyReasoning(model string, effort chat.ReasoningEffort, body map[string]any) {
+	if effort == "" {
+		return
 	}
+	shared.ApplyThinkingType(model, effort, body)
+	if shared.IsModel(model, switchOnlyModels...) {
+		return
+	}
+	if shared.IsModel(model, "glm-5-3-flash-260828") {
+		body["thinking"] = map[string]any{"type": "enabled"}
+	}
+	shared.ApplyReasoningEffort(model, effort, body)
 }

@@ -100,46 +100,30 @@ resp, err := client.Chat.Create(ctx, &chat.CreateRequest{
 
 公共常用请求字段包括模型、消息、采样参数、token 上限、停止词、工具、结构化输出、`ReasoningEffort` 和 `StreamOptions`。流式调用使用 `client.Chat.Stream`，返回的 chunk 可交给 `chat.Accumulator` 聚合。`StreamOptions` 未配置时默认请求 usage，只有显式设置 `IncludeUsage=false` 才关闭。
 
-`ReasoningEffort` 采用 OpenAI 的 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。类型是可扩展字符串，空值不额外设置思考参数。平台明确接受的等级（包括平台自行映射的兼容值）原样发送，例如 DeepSeek 的 `medium` 和百炼 Qwen3.8 的 `high` 均保持调用方原值。只有明确拒绝的已知档位才向下取可用档位；低于最小可用档位或模型不可关闭时使用最低可用档位，非 `none` 不在适配器内降成关闭。未知非空值在支持等级的协议中透传，在仅支持开关的协议中视为开启。
+`ReasoningEffort` 是可扩展字符串，提供 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` 常量，也接受自定义值。全部服务商采用同一约定：
 
-不同平台按各自协议判断模型能力，不把原生服务商规则套用到托管平台：
+- effort 为空时跳过自动适配，不生成思考参数；调用方的 `ExtraBody` 仍正常合并。
+- 仅支持开关的服务商，以及文档明确只支持开关的旧模型，保留原开关转换：`none` 表示关闭，其他非空值表示开启。
+- 支持等级的模型原样发送所有非空值，包括 `none` 和自定义值；不降档、不替换、不做等级支持范围校验。平台负责接受、映射或拒绝这些值。
+- 混合能力平台通过模型 ID、别名及显式配置的 `*` 通配规则识别旧开关模型，大小写不敏感，匹配整个模型名，其他字符按字面值处理。例如百炼的 `qwen-plus-*` 统一覆盖这一族的已有及未来快照；未命中任何规则的新版本、新快照和自定义模型默认透传等级。
+- 独立的 `thinking`、`enable_thinking`、`reasoning_split` 等协议辅助参数继续保留，但不会删除或改写等级路径中的原值。
 
-| 平台及模型 | 最终参数 |
-|---|---|
-| DeepSeek | `thinking.type` 与原值 `reasoning_effort` |
-| 百炼 Qwen3.8、DeepSeek V4、GLM 5 系列 | `enable_thinking` 与平台接受的原值 `reasoning_effort`；旧版托管 DeepSeek/GLM 的 minimal 使用最低可用档，none 仅关闭开关；GLM 5.3 仅接受 low/high/max，不能关闭 |
-| 百炼 Kimi K3 | 阿里云直供使用 low/high/max（可关闭）；`kimi/kimi-k3` 仅支持 max |
-| 百炼 MiniMax M3 | `thinking.type=adaptive/disabled`；其他旧模型维持 `enable_thinking` |
-| Kimi K3 | 仅 `reasoning_effort`，low/high/max；不可关闭；K2 保留 `thinking.type` |
-| 智谱 GLM 5.2 | `thinking.type` 与原值 `reasoning_effort`；5.3 仅接受 low/high/max，不能关闭；旧模型仅设置开关 |
-| 火山 Seed 2、Seed 1.8、Seed 1.6-251015、DeepSeek V4、GLM 5 等支持等级的模型 | `thinking.type` 与原值 `reasoning_effort`；`ep-*` 端点由平台解析模型能力 |
-| SiliconFlow DeepSeek V4、GLM 5.2 | `enable_thinking` 与 `reasoning_effort`；保留 low/medium/xhigh 等平台接受的别名，minimal 使用 high；none 仅关闭开关 |
-| OpenRouter | 原值 `reasoning.effort` |
-| OpenAI | `reasoning_effort`；已知不支持的档位按模型降档 |
-| Claude | `thinking` 与 `output_config.effort`，按模型支持范围适配 |
-
-只有发生档位变化或等级折叠的传参如下；未列出的组合保持原等级：
-
-| 模型或协议能力 | 调用方值 | 最终传参 |
+| 协议或平台 | 等级路径 | 已知旧模型或开关路径 |
 |---|---|---|
-| Gemini 3.1 Pro | `none`、`minimal` | `reasoning_effort=low` |
-| Gemini 3.1 Pro | `xhigh`、`max` | `reasoning_effort=high` |
-| Gemini 3、Gemini 2.5 Pro | `none` | `reasoning_effort=minimal` |
-| Gemini 2.5/3 | `xhigh`、`max` | `reasoning_effort=high` |
-| Claude effort 模型 | `minimal` | `output_config.effort=low` |
-| Claude 最高只支持 high | `xhigh`、`max` | `output_config.effort=high` |
-| Claude 支持 max、但不支持 xhigh | `xhigh` | `output_config.effort=high` |
-| 不可关闭 Claude | `none` | adaptive thinking，`output_config.effort=low` |
-| Claude Sonnet 5.5 | `none` | `thinking.type=between_tools`，`output_config.effort=low` |
-| 旧版 Claude | 任意非 `none` | enabled thinking，`budget_tokens=1024` |
-| 仅支持开关的模型、Xinference、Ollama、百度等 | 任意非 `none` | 对应思考开关或 enabled 模式 |
-| 混元 | `none` | `thinking.type=disabled` |
-| 混元 | `minimal`、`xhigh`、`max` | 分别降档为 `low`、`high`、`high`；`low/medium/high` 与未知非空值原样发送为 `reasoning_effort` |
-| MiniMax M3 | `none` / 其他非空值 | disabled / adaptive，并设置 `reasoning_split` |
-| MiniMax M3.1 | `none`、`minimal` | adaptive，`reasoning_effort=low`，`reasoning_split=true`；其他等级原样发送 |
-| 非 M3 MiniMax | `none` / 其他非空值 | 仅设置 `reasoning_split=false/true` |
+| OpenAI-compatible（含 OpenAI、Azure、Gemini、DeepSeek、混元等） | 顶层 `reasoning_effort` 原值 | 按各服务商显式登记的旧模型处理 |
+| 百炼、智谱、火山、SiliconFlow | `reasoning_effort` 原值，并保留辅助开关 | 明确登记的旧模型仅使用原开关 |
+| Kimi | `reasoning_effort` 原值 | 已知 K2.x 模型保留 `thinking.type` |
+| MiniMax | `reasoning_effort` 原值，并保留输出格式设置 | M3 保留 adaptive/disabled；已知 M2.x 保留原 `reasoning_split` 设置 |
+| OpenRouter | `reasoning.effort` 原值 | — |
+| Claude | `output_config.effort` 原值 | 已知旧模型保留 enabled/disabled 与原 token budget |
+| Ollama | OpenAI-compatible `reasoning_effort` 原值 | 已登记的布尔思考模型保留 `think=false/true` |
+| Cohere、Spark、Xinference 的现有开关协议 | — | `thinking.type` 或 `enable_thinking` |
 
-MiniMax 的 `reasoning_split` 只控制思考内容拆分到 `reasoning_content` 或保留在 `<think>` 中，不代表是否关闭思考；M2 不可通过这个参数关闭思考。M3 可使用 `thinking.type=disabled`，M3.1 不可关闭。`ExtraBody` 仍可最终覆盖所有自动生成的字段。
+例如，Kimi K3 的 `medium`、MiniMax M3.1 的 `none`、Gemini 的 `max`、Claude 的 `minimal` 均保留原值发送。即使模型当前不接受这些值，适配器也不会自动改成其他档位。开关路径中，请求关闭仅思考模型也可能被平台拒绝；具体模型约束由调用方根据上游文档选择。
+
+MiniMax 的 `reasoning_split` 是输出格式开关，不代表能否关闭思考。Ollama 兼容接口对等级的支持参见 [官方文档](https://docs.ollama.com/api/openai-compatibility)。
+
+`ExtraBody` 最后合并，同名字段优先覆盖，包括原始等级字段和辅助参数；跨字段互斥关系由调用方负责，不自动删除冲突参数。
 
 DeepSeek、Kimi、百炼、智谱、火山和 SiliconFlow 的历史 assistant 消息会保留 `ReasoningContent`，用于要求回传思考内容的多轮及工具调用场景。
 

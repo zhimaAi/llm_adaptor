@@ -239,17 +239,6 @@ func buildOpenAIMessageContent(spec Spec, content chat.MessageContent) (any, err
 	return parts, nil
 }
 
-func IsKnownReasoningEffort(effort chat.ReasoningEffort) bool {
-	switch effort {
-	case "", chat.ReasoningEffortNone, chat.ReasoningEffortMinimal, chat.ReasoningEffortLow,
-		chat.ReasoningEffortMedium, chat.ReasoningEffortHigh, chat.ReasoningEffortXHigh,
-		chat.ReasoningEffortMax:
-		return true
-	default:
-		return false
-	}
-}
-
 func DefaultChatStreamOptions(options *chat.StreamOptions) *chat.StreamOptions {
 	result := chat.StreamOptions{}
 	if options != nil {

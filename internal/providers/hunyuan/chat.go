@@ -21,16 +21,6 @@ func applyReasoning(model string, effort chat.ReasoningEffort, body map[string]a
 	}
 	if effort == chat.ReasoningEffortNone {
 		shared.ApplyThinkingType(model, effort, body)
-		return
 	}
-	switch effort {
-	case chat.ReasoningEffortMinimal, chat.ReasoningEffortLow:
-		body["reasoning_effort"] = string(chat.ReasoningEffortLow)
-	case chat.ReasoningEffortMedium, chat.ReasoningEffortHigh:
-		body["reasoning_effort"] = string(effort)
-	case chat.ReasoningEffortXHigh, chat.ReasoningEffortMax:
-		body["reasoning_effort"] = string(chat.ReasoningEffortHigh)
-	default:
-		body["reasoning_effort"] = string(effort)
-	}
+	shared.ApplyReasoningEffort(model, effort, body)
 }
