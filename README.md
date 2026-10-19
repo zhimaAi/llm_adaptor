@@ -63,6 +63,30 @@ selected, err := llm.SelectAPIKey(llm.SelectAPIKeyRequest{
 })
 ```
 
+## HTTP 日志
+
+初始化时注册全局回调，覆盖已有及新建客户端的所有能力，以及上传、下载等附属 HTTP 请求：
+
+```go
+llm.RegisterHTTPLogger(func(ctx context.Context, entry llm.HTTPLog) {
+    // 在此接入应用现有日志系统，回调可能并发执行。
+    log.Printf("%s %s status=%d duration=%s request=%s response=%s error=%v",
+        entry.Method, entry.URL, entry.StatusCode, entry.Duration,
+        entry.RequestBody, entry.ResponseBody, entry.Error)
+})
+
+// 停止记录新请求；已开始请求仍使用其开始时取得的回调。
+llm.RegisterHTTPLogger(nil)
+```
+
+`HTTPLog` 包含 `RequestTime`、`URL`、`Method`、`RequestHeaders`、`RequestBody`、`ResponseTime`、`EndTime`、`Duration`、`StatusCode`、`ResponseHeaders`、`ResponseBody`、`ResponseBodyEOF` 和 `Error`。`ResponseTime` 为收到响应头的时间，`EndTime` 为正文读完、读失败或关闭的时间，`Duration` 为请求开始至 `EndTime` 的耗时。网络失败时响应时间为零、状态码为 0。
+
+日志保存适配器完成字段转换、`ExtraBody` 覆盖及鉴权设置后的原始输入，以及解码前的 HTTP 响应正文。请求链接、请求头（含鉴权值）、响应头和正文均原样提供，不脱敏、不截断；二进制、multipart 和 SSE 正文使用 `[]byte`。自定义 Transport 或 HTTP 底层自动添加的字段不属于适配器输入快照。
+
+响应边读边收集，不预读或等待完整响应才返回首包。每次 HTTP 往返在 EOF、读取失败或 `Close` 时同步回调一次；重定向产生多条记录。`ResponseBodyEOF` 只表示是否实际读至 HTTP EOF，提前关闭时正文仅包含已读取字节；SSE 收到协议结束标记后关闭但未读至 HTTP EOF，也可能为 `false`。调用方必须消费或关闭流，未关闭且未读完的响应尚不会回调。
+
+默认不记录。未注册时不复制正文；注册后完整正文会保留在内存，存储和脱敏由回调负责。注册及回调替换支持并发，回调取得独立快照，panic 不影响模型调用。适配器复制传入的 `http.Client`，保留其 Transport、Timeout、Cookie Jar 和重定向策略。
+
 ## Chat
 
 ```go
@@ -76,7 +100,23 @@ resp, err := client.Chat.Create(ctx, &chat.CreateRequest{
 
 公共常用请求字段包括模型、消息、采样参数、token 上限、停止词、工具、结构化输出、`ReasoningEffort` 和 `StreamOptions`。流式调用使用 `client.Chat.Stream`，返回的 chunk 可交给 `chat.Accumulator` 聚合。`StreamOptions` 未配置时默认请求 usage，只有显式设置 `IncludeUsage=false` 才关闭。
 
-`ReasoningEffort` 采用 OpenAI 的 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。类型是可扩展字符串：适配器不会拒绝未来新增的非空值。OpenAI-compatible、Gemini、OpenRouter 和 Claude 会尽可能透传等级；只有思考开关的供应商将 `none` 视为关闭、其他非空值视为开启；等级不完整的模型向下使用最高可用等级，但非 `none` 不会降成关闭。MiniMax 保留原协议转换：所有模型使用 `reasoning_split`，M3 额外转换为 `thinking.type=adaptive/disabled`。
+`ReasoningEffort` 采用 OpenAI 的 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。类型是可扩展字符串，空值不额外设置思考参数。平台明确接受的等级（包括平台自行映射的兼容值）原样发送，例如 DeepSeek 的 `medium` 和百炼 Qwen3.8 的 `high` 均保持调用方原值。只有明确拒绝的已知档位才向下取可用档位；低于最小可用档位或模型不可关闭时使用最低可用档位，非 `none` 不在适配器内降成关闭。未知非空值在支持等级的协议中透传，在仅支持开关的协议中视为开启。
+
+不同平台按各自协议判断模型能力，不把原生服务商规则套用到托管平台：
+
+| 平台及模型 | 最终参数 |
+|---|---|
+| DeepSeek | `thinking.type` 与原值 `reasoning_effort` |
+| 百炼 Qwen3.8、DeepSeek V4、GLM 5 系列 | `enable_thinking` 与平台接受的原值 `reasoning_effort`；旧版托管 DeepSeek/GLM 的 minimal 使用最低可用档，none 仅关闭开关；GLM 5.3 仅接受 low/high/max，不能关闭 |
+| 百炼 Kimi K3 | 阿里云直供使用 low/high/max（可关闭）；`kimi/kimi-k3` 仅支持 max |
+| 百炼 MiniMax M3 | `thinking.type=adaptive/disabled`；其他旧模型维持 `enable_thinking` |
+| Kimi K3 | 仅 `reasoning_effort`，low/high/max；不可关闭；K2 保留 `thinking.type` |
+| 智谱 GLM 5.2 | `thinking.type` 与原值 `reasoning_effort`；5.3 仅接受 low/high/max，不能关闭；旧模型仅设置开关 |
+| 火山 Seed 2、Seed 1.8、Seed 1.6-251015、DeepSeek V4、GLM 5 等支持等级的模型 | `thinking.type` 与原值 `reasoning_effort`；`ep-*` 端点由平台解析模型能力 |
+| SiliconFlow DeepSeek V4、GLM 5.2 | `enable_thinking` 与 `reasoning_effort`；保留 low/medium/xhigh 等平台接受的别名，minimal 使用 high；none 仅关闭开关 |
+| OpenRouter | 原值 `reasoning.effort` |
+| OpenAI | `reasoning_effort`；已知不支持的档位按模型降档 |
+| Claude | `thinking` 与 `output_config.effort`，按模型支持范围适配 |
 
 只有发生档位变化或等级折叠的传参如下；未列出的组合保持原等级：
 
@@ -90,14 +130,18 @@ resp, err := client.Chat.Create(ctx, &chat.CreateRequest{
 | Claude 最高只支持 high | `xhigh`、`max` | `output_config.effort=high` |
 | Claude 支持 max、但不支持 xhigh | `xhigh` | `output_config.effort=high` |
 | 不可关闭 Claude | `none` | adaptive thinking，`output_config.effort=low` |
+| Claude Sonnet 5.5 | `none` | `thinking.type=between_tools`，`output_config.effort=low` |
 | 旧版 Claude | 任意非 `none` | enabled thinking，`budget_tokens=1024` |
-| 阿里、SiliconFlow、Xinference、Ollama、百度及 thinking.type 型供应商 | 任意非 `none` | 对应思考开关或 enabled 模式 |
+| 仅支持开关的模型、Xinference、Ollama、百度等 | 任意非 `none` | 对应思考开关或 enabled 模式 |
 | 混元 | `none` | `thinking.type=disabled` |
 | 混元 | `minimal`、`xhigh`、`max` | 分别降档为 `low`、`high`、`high`；`low/medium/high` 与未知非空值原样发送为 `reasoning_effort` |
 | MiniMax M3 | `none` / 其他非空值 | disabled / adaptive，并设置 `reasoning_split` |
+| MiniMax M3.1 | `none`、`minimal` | adaptive，`reasoning_effort=low`，`reasoning_split=true`；其他等级原样发送 |
 | 非 M3 MiniMax | `none` / 其他非空值 | 仅设置 `reasoning_split=false/true` |
 
-未知非空值按向前兼容规则处理：OpenAI-compatible 和 Gemini 原样发送 `reasoning_effort`，OpenRouter 原样发送 `reasoning.effort`，Claude 原样发送 `output_config.effort`，开关型供应商和 MiniMax 视为开启。`ExtraBody` 仍可最终覆盖这些结果。
+MiniMax 的 `reasoning_split` 只控制思考内容拆分到 `reasoning_content` 或保留在 `<think>` 中，不代表是否关闭思考；M2 不可通过这个参数关闭思考。M3 可使用 `thinking.type=disabled`，M3.1 不可关闭。`ExtraBody` 仍可最终覆盖所有自动生成的字段。
+
+DeepSeek、Kimi、百炼、智谱、火山和 SiliconFlow 的历史 assistant 消息会保留 `ReasoningContent`，用于要求回传思考内容的多轮及工具调用场景。
 
 响应完整保留 OpenAI Chat Completions 的 ID、对象类型、模型、choices、工具调用、音频、引用、logprobs、usage、service tier 和 system fingerprint。`ReasoningContent` 是标准化兼容字段：供应商有原生 reasoning 时优先使用，否则从完整或跨 chunk 的 `<think>...</think>` 中抽取。OpenRouter 的 `reasoning`、`reasoning_content` 及 `reasoning_details` 文本或摘要会在普通和流式响应中统一映射到该字段。
 

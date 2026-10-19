@@ -17,6 +17,15 @@ func configureChat(spec *openai.Spec, _ provider.Config) {
 		}
 		enabled := shared.ReasoningEnabled(effort)
 		delete(body, "reasoning_effort")
+		if openai.HasModelPrefix(model, "minimax-m3.1") {
+			body["thinking"] = map[string]any{"type": "adaptive"}
+			body["reasoning_effort"] = string(shared.SupportedReasoningEffort(effort,
+				chat.ReasoningEffortLow, chat.ReasoningEffortMedium, chat.ReasoningEffortHigh,
+				chat.ReasoningEffortXHigh, chat.ReasoningEffortMax))
+			body["reasoning_split"] = true
+			openai.MoveMaxTokensToCompletionTokens(body)
+			return
+		}
 		if openai.HasModelPrefix(model, "minimax-m3") {
 			thinkingType := "disabled"
 			if enabled {

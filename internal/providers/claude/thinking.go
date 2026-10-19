@@ -24,12 +24,19 @@ type reasoningCapability struct {
 	adaptiveThinking bool
 	effort           bool
 	cannotDisable    bool
+	disableType      string
 	defaultSampling  bool
 	supportsXHigh    bool
 	supportsMax      bool
 }
 
 var reasoningCapabilities = []reasoningCapability{
+	{prefix: "claude-opus-5-5", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-opus-5.5", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-sonnet-5-5", adaptiveThinking: true, effort: true, disableType: "between_tools", defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-sonnet-5.5", adaptiveThinking: true, effort: true, disableType: "between_tools", defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-haiku-5-5", adaptiveThinking: true, effort: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
+	{prefix: "claude-haiku-5.5", adaptiveThinking: true, effort: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
 	{prefix: "claude-fable-5", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
 	{prefix: "claude-mythos-5", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsXHigh: true, supportsMax: true},
 	{prefix: "claude-mythos-preview", adaptiveThinking: true, effort: true, cannotDisable: true, defaultSampling: true, supportsMax: true},
@@ -49,7 +56,12 @@ func applyReasoning(model string, effort chat.ReasoningEffort, body map[string]a
 	capability := capabilityForModel(model)
 	if effort == chat.ReasoningEffortNone {
 		if !capability.cannotDisable {
-			body["thinking"] = map[string]any{"type": thinkingDisabled}
+			mode := thinkingDisabled
+			if capability.disableType != "" {
+				mode = capability.disableType
+				body["output_config"] = map[string]any{"effort": string(chat.ReasoningEffortLow)}
+			}
+			body["thinking"] = map[string]any{"type": mode}
 		} else {
 			body["thinking"] = map[string]any{"type": thinkingAdaptive, "display": thinkingDisplay}
 			body["output_config"] = map[string]any{"effort": string(chat.ReasoningEffortLow)}

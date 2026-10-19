@@ -3,6 +3,7 @@
 package zhipu
 
 import (
+	"github.com/zhimaAi/llm_adaptor/v2/chat"
 	"github.com/zhimaAi/llm_adaptor/v2/internal/protocol/openai"
 	"github.com/zhimaAi/llm_adaptor/v2/internal/provider"
 	"github.com/zhimaAi/llm_adaptor/v2/internal/shared"
@@ -19,5 +20,21 @@ func configureChat(spec *openai.Spec, _ provider.Config) {
 		"seed",
 	)
 	spec.ChatFieldAliases = map[string]string{"user": "user_id"}
-	spec.ApplyReasoning = shared.ApplyThinkingType
+	spec.SupportsReasoningContent = true
+	spec.ApplyReasoning = func(model string, effort chat.ReasoningEffort, body map[string]any) {
+		if effort == "" {
+			return
+		}
+		if openai.HasModelPrefix(model, "glm-5.3") {
+			effort = shared.SupportedReasoningEffort(effort,
+				chat.ReasoningEffortLow, chat.ReasoningEffortHigh, chat.ReasoningEffortMax)
+			body["thinking"] = map[string]any{"type": "enabled"}
+			body["reasoning_effort"] = string(effort)
+			return
+		}
+		shared.ApplyThinkingType(model, effort, body)
+		if openai.HasModelPrefix(model, "glm-5.2") {
+			body["reasoning_effort"] = string(effort)
+		}
+	}
 }
