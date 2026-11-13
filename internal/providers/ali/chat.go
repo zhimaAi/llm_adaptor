@@ -59,5 +59,10 @@ func applyReasoning(model string, effort chat.ReasoningEffort, body map[string]a
 		"ZHIPU/GLM-5.3", "ZHIPU/GLM-5.3-Flash", "ZHIPU/GLM-5.3-FlashX") {
 		body["enable_thinking"] = true
 	}
+	if effort == chat.ReasoningEffortNone {
+		// Some Ali models reject reasoning_effort="none"; disable thinking with the switch instead.
+		body["enable_thinking"] = false
+		return
+	}
 	shared.ApplyReasoningEffort(model, effort, body)
 }
